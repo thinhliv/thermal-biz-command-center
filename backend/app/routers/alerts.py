@@ -13,6 +13,7 @@ from ..models import Alert, Severity, User
 from ..schemas import AcknowledgeRequest, AlertPublic
 from ..security import ThermalRoles
 from ..services import thermal
+from ..services.audit import record_audit
 from ..timeutil import utcnow
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
@@ -91,6 +92,14 @@ def acknowledge(
     alert.acknowledged_by_id = user.id
     if payload and payload.note:
         alert.message = f"{alert.message} | Ghi chu: {payload.note}"[:500]
+    record_audit(
+        session,
+        user,
+        action="ACK_ALERT",
+        resource_type="alert",
+        resource_id=str(alert.id),
+        details={"severity": alert.severity, "metric": alert.metric, "note": payload.note if payload else None},
+    )
     session.commit()
     session.refresh(alert)
     return thermal.serialize_alert(alert)
@@ -113,6 +122,14 @@ def clear(
         alert.acknowledged_at = utcnow()
         alert.acknowledged_by_id = user.id
     alert.cleared_at = utcnow()
+    record_audit(
+        session,
+        user,
+        action="CLEAR_ALERT",
+        resource_type="alert",
+        resource_id=str(alert.id),
+        details={"severity": alert.severity, "metric": alert.metric},
+    )
     session.commit()
     session.refresh(alert)
     return thermal.serialize_alert(alert)

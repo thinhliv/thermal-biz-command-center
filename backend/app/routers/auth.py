@@ -16,6 +16,7 @@ from ..security import (
     scopes_for,
     verify_password,
 )
+from ..services.audit import record_audit
 from ..timeutil import utcnow
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -50,6 +51,14 @@ def login(payload: LoginRequest, session: Session = Depends(get_session)) -> Log
 
     token, expires_in = create_access_token(user)
     user.last_login_at = utcnow()
+    record_audit(
+        session,
+        user,
+        action="USER_LOGIN",
+        resource_type="user",
+        resource_id=str(user.id),
+        details={"username": user.username, "role": user.role},
+    )
     session.commit()
     return LoginResponse(access_token=token, expires_in_minutes=expires_in, user=_public(user))
 
@@ -69,6 +78,13 @@ def change_password(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Mat khau hien tai khong dung.")
     try:
         user.password_hash = hash_password(payload.new_password)
+        record_audit(
+            session,
+            user,
+            action="CHANGE_PASSWORD",
+            resource_type="user",
+            resource_id=str(user.id),
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     session.commit()

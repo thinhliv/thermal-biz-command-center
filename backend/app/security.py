@@ -141,12 +141,31 @@ def require_connector_key(x_connector_api_key: str = Header(default="")) -> None
 
 
 # --------------------------------------------------------------------------- #
-# Ban do quyen cho frontend biet nen an/hien tab nao
+# Ban do quyen cho frontend biet nen an/hien tab nao (L1-L10 Enterprise Matrix)
 # --------------------------------------------------------------------------- #
 ROLE_SCOPES: dict[str, list[str]] = {
-    Role.BGD.value: ["overview", "thermal", "business", "debts", "alerts"],
+    # 3 Vai tro goc (Tuong thich nguoc 100%)
+    Role.BGD.value: ["overview", "thermal", "business", "debts", "alerts", "audit"],
     Role.VANHANH.value: ["thermal", "alerts"],
     Role.KETOAN.value: ["business", "debts"],
+
+    # Cap Lanh Dao & Chien Luoc
+    Role.L1_CHAIRMAN.value: ["overview", "thermal", "business", "debts", "alerts", "audit"],
+    Role.L2_CEO.value: ["overview", "thermal", "business", "debts", "alerts", "audit"],
+
+    # Cap Quan Ly Ky Thuat & Co Dien Lanh
+    Role.L3_TECHNICAL_DIRECTOR.value: ["overview", "thermal", "alerts", "audit"],
+    Role.L4_OPERATIONS_MANAGER.value: ["thermal", "alerts"],
+    Role.L5_MAINTENANCE_ENGINEER.value: ["thermal", "alerts"],
+
+    # Cap Van Hanh Chuoi Kho Lanh & HACCP
+    Role.L6_HACCP_AUDITOR.value: ["overview", "thermal", "alerts"],
+    Role.L7_WAREHOUSE_DISPATCHER.value: ["thermal", "alerts"],
+
+    # Cap Tai Chinh, Ke Toan & Kinh Doanh ESCO
+    Role.L8_CFO.value: ["overview", "business", "debts", "audit"],
+    Role.L9_BILLING_SPECIALIST.value: ["business", "debts"],
+    Role.L10_SALES_EXECUTIVE.value: ["business"],
 }
 
 
@@ -154,8 +173,33 @@ def scopes_for(role: str) -> list[str]:
     return list(ROLE_SCOPES.get(role, []))
 
 
-# Dependency dung lai cho cac router
-ExecutiveOnly = require_roles(Role.BGD)
-ThermalRoles = require_roles(Role.BGD, Role.VANHANH)
-FinanceRoles = require_roles(Role.BGD, Role.KETOAN)
-AnyRole = require_roles(Role.BGD, Role.VANHANH, Role.KETOAN)
+# Dependency dung lai cho cac router ho tro toan bo L1-L10
+ExecutiveOnly = require_roles(Role.BGD, Role.L1_CHAIRMAN, Role.L2_CEO)
+ThermalRoles = require_roles(
+    Role.BGD,
+    Role.VANHANH,
+    Role.L1_CHAIRMAN,
+    Role.L2_CEO,
+    Role.L3_TECHNICAL_DIRECTOR,
+    Role.L4_OPERATIONS_MANAGER,
+    Role.L5_MAINTENANCE_ENGINEER,
+    Role.L6_HACCP_AUDITOR,
+    Role.L7_WAREHOUSE_DISPATCHER,
+)
+FinanceRoles = require_roles(
+    Role.BGD,
+    Role.KETOAN,
+    Role.L1_CHAIRMAN,
+    Role.L2_CEO,
+    Role.L8_CFO,
+    Role.L9_BILLING_SPECIALIST,
+    Role.L10_SALES_EXECUTIVE,
+)
+AuditRoles = require_roles(
+    Role.BGD,
+    Role.L1_CHAIRMAN,
+    Role.L2_CEO,
+    Role.L3_TECHNICAL_DIRECTOR,
+    Role.L8_CFO,
+)
+AnyRole = require_roles(*list(Role))

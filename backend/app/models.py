@@ -40,11 +40,30 @@ Money = BigInteger
 # Enum nghiep vu
 # --------------------------------------------------------------------------- #
 class Role(str, Enum):
-    """RBAC 3 vai."""
+    """RBAC 3 vai truyen thong + He thong 10 cap bac L1-L10 Enterprise."""
 
+    # 3 Vai tro co ban (Backward-compatible)
     BGD = "BGD"  # Ban giam doc: thay tat ca
     VANHANH = "VANHANH"  # Van hanh: chi Nhiet + xac nhan canh bao
     KETOAN = "KETOAN"  # Ke toan: chi Kinh doanh + Cong no
+
+    # Cap Lanh Dao & Chien Luoc (Executive Tier)
+    L1_CHAIRMAN = "L1_CHAIRMAN"  # L1: Chu tich HDQT / Co dong chien luoc
+    L2_CEO = "L2_CEO"  # L2: Tong Giam doc Dieu hanh
+
+    # Cap Quan Ly Ky Thuat & Co Dien Lanh (Engineering Tier)
+    L3_TECHNICAL_DIRECTOR = "L3_TECHNICAL_DIRECTOR"  # L3: Giam doc Ky thuat
+    L4_OPERATIONS_MANAGER = "L4_OPERATIONS_MANAGER"  # L4: Truong ca Van hanh
+    L5_MAINTENANCE_ENGINEER = "L5_MAINTENANCE_ENGINEER"  # L5: Ky su Bao tri
+
+    # Cap Van Hanh Chuoi Kho Lanh & HACCP (Quality & Cold Chain Tier)
+    L6_HACCP_AUDITOR = "L6_HACCP_AUDITOR"  # L6: Chuyen vien HACCP & Chat luong
+    L7_WAREHOUSE_DISPATCHER = "L7_WAREHOUSE_DISPATCHER"  # L7: Dieu phoi vien Kho lanh
+
+    # Cap Tai Chinh, Ke Toan & Kinh Doanh ESCO (Finance & Commercial Tier)
+    L8_CFO = "L8_CFO"  # L8: Giam doc Tai chinh / Ke toan truong
+    L9_BILLING_SPECIALIST = "L9_BILLING_SPECIALIST"  # L9: Chuyen vien Billing ESCO & Cong no
+    L10_SALES_EXECUTIVE = "L10_SALES_EXECUTIVE"  # L10: Chuyen vien Kinh doanh B2B
 
 
 class EquipmentKind(str, Enum):
@@ -153,7 +172,12 @@ class User(Base):
 
     acknowledged_alerts: Mapped[list["Alert"]] = relationship(back_populates="acknowledged_by_user")
 
-    __table_args__ = (CheckConstraint("role IN ('BGD','VANHANH','KETOAN')", name="ck_users_role"),)
+    __table_args__ = (
+        CheckConstraint(
+            f"role IN ({', '.join(repr(r.value) for r in Role)})",
+            name="ck_users_role",
+        ),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -612,3 +636,27 @@ class BilledInvoice(Base):
     __table_args__ = (
         UniqueConstraint("tenant_code", "period_start", "period_end", name="uq_billed_invoice_period"),
     )
+
+
+class AuditLog(Base):
+    """Nhat ky kiem toan bat bien (Immutable Tamper-Evident Audit Trail).
+
+    Moi thao tac he thong (dang nhap, xac nhan canh bao, thay doi setpoint, xuat hoa don)
+    deu duoc bam signature SHA-256 xau chuoi voi ban ghi truoc do.
+    """
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False)
+    user_role: Mapped[str] = mapped_column(String(32), nullable=False)
+    action: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    resource_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    previous_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="GENESIS")
+    signature_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+

@@ -239,3 +239,35 @@ def test_b_uses_server_side_rate_not_caller_rate():
     body = response.json()
     assert body["line_item"]["cost"] == 4000
     assert body["total_vnd"] == body["kwh_metered"] * 4000
+
+
+def test_b_calculates_evn_tou_distribution_and_delta():
+    with TestClient(connector_b(SERVICE_RATE_PER_KWH="3500").app) as client:
+        response = client.post(
+            "/api/generate-invoice",
+            json={**METER_BODY, "simulated_delta_kwh": 500.0},
+            headers=auth_headers(),
+        )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["kwh_metered"] == 500.0
+    assert body["total_vnd"] == 500.0 * 3500
+    tou = body["tou_distribution"]
+    assert "PEAK" in tou
+    assert "NORMAL" in tou
+    assert "OFF_PEAK" in tou
+    assert round(tou["PEAK"]["kwh"] + tou["NORMAL"]["kwh"] + tou["OFF_PEAK"]["kwh"], 2) == 500.0
+
+
+def test_b_enforces_idempotency_for_billing_period():
+    mod = connector_b()
+    with TestClient(mod.app) as client:
+        payload = {**METER_BODY, "billing_period": "2026-11-TEST"}
+        res1 = client.post("/api/generate-invoice", json=payload, headers=auth_headers())
+        assert res1.status_code == 200
+        assert res1.json()["status"] == "simulated"
+
+        # Second invoice in same period is blocked by idempotency
+        res2 = client.post("/api/generate-invoice", json=payload, headers=auth_headers())
+        assert res2.status_code == 200
+        assert res2.json()["status"] == "already_billed"

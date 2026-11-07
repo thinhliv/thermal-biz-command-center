@@ -1,0 +1,1427 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Dashboard kỹ thuật đọc trực tiếp Postgres của backend tự viết (schema do Alembic quản lý). Màn hình điều hành chính vẫn là app ThermalBiz; bảng này dành cho tổ vận hành/kế toán cần truy vấn ad-hoc. Ba khối tương ứng ba role RBAC: overview / thermal / business+debts.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "panels": [],
+      "title": "BAN GIÁM ĐỐC — doanh thu, giá vốn, công nợ, cảnh báo",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(revenue_vnd), 0) AS \"Doanh thu\"\n        FROM service_orders\n        WHERE status <> 'CANCELLED'",
+          "refId": "A"
+        }
+      ],
+      "title": "Doanh thu luỹ kế",
+      "type": "stat",
+      "description": "Tổng doanh thu các lệnh dịch vụ chưa huỷ (service_orders.revenue_vnd).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyVND"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "id": 3,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(electricity_cost_vnd + refrigerant_cost_vnd + labor_cost_vnd\n                            + maintenance_cost_vnd + overhead_cost_vnd), 0) AS \"COGS\"\n        FROM service_orders\n        WHERE status <> 'CANCELLED'",
+          "refId": "A"
+        }
+      ],
+      "title": "Tổng giá vốn luỹ kế (COGS đầy đủ)",
+      "type": "stat",
+      "description": "Đủ 5 khoản giá vốn: tiền điện, môi lạnh, nhân công, bảo trì, chi phí chung. Không chỉ tính riêng tiền điện.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyVND"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "id": 4,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE WHEN SUM(revenue_vnd) > 0\n               THEN ROUND(100.0 * (SUM(revenue_vnd)\n                     - SUM(electricity_cost_vnd + refrigerant_cost_vnd + labor_cost_vnd\n                           + maintenance_cost_vnd + overhead_cost_vnd)) / SUM(revenue_vnd), 1)\n               END AS \"Biên LN gộp\"\n        FROM service_orders\n        WHERE status <> 'CANCELLED'",
+          "refId": "A"
+        }
+      ],
+      "title": "Biên lợi nhuận gộp (luỹ kế)",
+      "type": "gauge",
+      "description": "(Doanh thu − COGS đầy đủ) / Doanh thu. COGS ở đây đã gồm cả môi lạnh, nhân công, bảo trì và chi phí chung. Chưa có doanh thu thì để trống chứ không hiện 0% — khớp `gross_margin_pct` của backend trả `null` để tránh một con số 0% trông như thật.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 10
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "green",
+                "value": 30
+              }
+            ]
+          },
+          "max": 60,
+          "min": 0,
+          "noValue": "Chưa có doanh thu",
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "options": {
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "id": 5,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(GREATEST(0, amount_vnd - paid_amount_vnd)), 0) AS \"Nợ quá hạn\"\n        FROM receivables\n        WHERE status IN ('OPEN', 'PARTIAL')\n          AND due_at <= (now() AT TIME ZONE 'utc') - interval '1 day'",
+          "refId": "A"
+        }
+      ],
+      "title": "Nợ quá hạn",
+      "type": "stat",
+      "description": "Tổng còn lại của các khoản phải thu OPEN/PARTIAL đã trễ hạn TỪ 1 NGÀY TRỌN trở lên. Khớp đúng `overdue_days > 0` của backend (`max(0, (now - due_at).days)`), không phải `due_at < now` — trễ vài giờ chưa bị tính là quá hạn. Trạng thái OVERDUE không được lưu trong DB, luôn suy ra từ `due_at`.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 200000000
+              },
+              {
+                "color": "red",
+                "value": 500000000
+              }
+            ]
+          },
+          "unit": "currencyVND"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "id": 6,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE cleared_at IS NULL) AS \"Đang mở\",\n               COUNT(*) FILTER (WHERE cleared_at IS NULL AND acknowledged_at IS NULL) AS \"Chưa xác nhận\"\n        FROM alerts",
+          "refId": "A"
+        }
+      ],
+      "title": "Cảnh báo đang mở",
+      "type": "stat",
+      "description": "Số cảnh báo chưa clear. Giá trị thứ hai là số chưa ai xác nhận.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "id": 7,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"HACCP\"\n        FROM alerts\n        WHERE is_haccp AND cleared_at IS NULL",
+          "refId": "A"
+        }
+      ],
+      "title": "Vi phạm HACCP đang mở",
+      "type": "stat",
+      "description": "Cảnh báo gắn cờ is_haccp (ví dụ nhiệt độ kho hải sản vượt −18 °C). Khác 0 là phải xử lý ngay.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 8,
+      "panels": [],
+      "title": "VẬN HÀNH NHIỆT — SCADA, COP, rung động, HACCP",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 14,
+        "x": 0,
+        "y": 6
+      },
+      "id": 9,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT s.ts AT TIME ZONE 'UTC' AS \"time\",\n           e.name AS \"metric\",\n           s.temperature_c AS \"value\"\n    FROM telemetry_samples s\n    JOIN equipment e ON e.id = s.equipment_id\n    WHERE s.temperature_c IS NOT NULL\n      AND $__timeFilter(s.ts)\n    ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Nhiệt độ từng kho theo thời gian",
+      "type": "timeseries",
+      "description": "Đường đỏ là ngưỡng HACCP hải sản −18 °C: vượt lên trên là mất an toàn thực phẩm.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "°C",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "mappings": [],
+          "unit": "celsius",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": -18
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "min",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 5,
+        "x": 14,
+        "y": 6
+      },
+      "id": 10,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(AVG(latest.cop)::numeric, 2) AS \"COP\"\n        FROM equipment e\n        CROSS JOIN LATERAL (\n            SELECT s.cop\n            FROM telemetry_samples s\n            WHERE s.equipment_id = e.id\n            ORDER BY s.ts DESC\n            LIMIT 1\n        ) latest\n        WHERE e.is_active\n          AND e.kind <> 'BOILER'\n          AND latest.cop IS NOT NULL",
+          "refId": "A"
+        }
+      ],
+      "title": "COP trung bình (mẫu mới nhất)",
+      "type": "gauge",
+      "description": "COP = Q_o/N_e, backend tính lại lúc ingest chứ không tin giá trị thiết bị gửi lên. Đây là trung bình COP của MẪU MỚI NHẤT từng thiết bị lạnh đang hoạt động — đúng định nghĩa `avg_cop` của `/api/thermal/summary`. Lò hơi không có COP, nó dùng η (%) là một đại lượng khác hẳn.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2
+              },
+              {
+                "color": "yellow",
+                "value": 3.2
+              },
+              {
+                "color": "green",
+                "value": 3.8
+              }
+            ]
+          },
+          "max": 5,
+          "min": 1,
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "options": {
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 5,
+        "x": 19,
+        "y": 6
+      },
+      "id": 11,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(s.ts, '5m'),\n               SUM(s.power_kw) AS \"Tổng kW\"\n        FROM telemetry_samples s\n        WHERE s.power_kw IS NOT NULL\n          AND $__timeFilter(s.ts)\n        GROUP BY 1\n        ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Tổng công suất điện (kW)",
+      "type": "timeseries",
+      "description": "Tổng công suất tức thời của mọi thiết bị, gộp theo 5 phút.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "kW",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 25,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "unit": "kwatt"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
+      "id": 12,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT e.code AS \"Mã\",\n           e.name AS \"Thiết bị\",\n           e.kind AS \"Loại\",\n           e.location AS \"Vị trí\",\n           latest.ts AT TIME ZONE 'UTC' AS \"Cập nhật lúc\",\n           ROUND(latest.temperature_c::numeric, 2) AS \"Nhiệt độ (°C)\",\n           ROUND(latest.cop::numeric, 2) AS \"COP\",\n           ROUND(e.design_cop::numeric, 2) AS \"COP thiết kế\",\n           ROUND(latest.efficiency_pct::numeric, 1) AS \"Hiệu suất η (%)\",\n           ROUND(latest.vibration_mm_s::numeric, 2) AS \"Rung (mm/s)\",\n           ROUND(latest.power_kw::numeric, 1) AS \"Công suất (kW)\",\n           latest.status AS \"Trạng thái\"\n    FROM equipment e\n    LEFT JOIN LATERAL (\n        SELECT s.ts, s.temperature_c, s.cop, s.efficiency_pct, s.vibration_mm_s, s.power_kw, s.status\n        FROM telemetry_samples s\n        WHERE s.equipment_id = e.id\n        ORDER BY s.ts DESC\n        LIMIT 1\n    ) latest ON true\n    WHERE e.is_active\n    ORDER BY e.code",
+          "refId": "A"
+        }
+      ],
+      "title": "Thiết bị & chỉ số mới nhất",
+      "type": "table",
+      "description": "Mỗi thiết bị một dòng, lấy mẫu telemetry mới nhất. Rung > 4,5 mm/s là vùng C/D theo ISO 10816-3. Lò hơi chỉ có cột η, máy lạnh chỉ có cột COP — hai đại lượng này không thay thế nhau được.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Rung (mm/s)"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 2.8
+                    },
+                    {
+                      "color": "red",
+                      "value": 4.5
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nhiệt độ (°C)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "celsius"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trạng thái"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "FAULT": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "STOPPED": {
+                        "color": "dark-red",
+                        "index": 1
+                      },
+                      "DEFROST": {
+                        "color": "yellow",
+                        "index": 2
+                      },
+                      "STANDBY": {
+                        "color": "blue",
+                        "index": 3
+                      },
+                      "RUNNING": {
+                        "color": "green",
+                        "index": 4
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "id": 13,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT a.severity AS \"Mức độ\",\n           COALESCE(e.name, '(không gắn thiết bị)') AS \"Thiết bị\",\n           a.metric AS \"Chỉ số\",\n           ROUND(a.observed_value::numeric, 2) AS \"Giá trị đo\",\n           a.threshold AS \"Ngưỡng\",\n           a.message AS \"Nội dung\",\n           CASE WHEN a.is_haccp THEN 'CÓ' ELSE '' END AS \"HACCP\",\n           CASE WHEN a.acknowledged_at IS NULL THEN 'CHƯA' ELSE 'RỒI' END AS \"Đã xác nhận\",\n           a.raised_at AT TIME ZONE 'UTC' AS \"Lúc phát sinh\"\n    FROM alerts a\n    LEFT JOIN equipment e ON e.id = a.equipment_id\n    WHERE a.cleared_at IS NULL\n    ORDER BY CASE a.severity WHEN 'CRITICAL' THEN 0 WHEN 'MAJOR' THEN 1\n                             WHEN 'WARNING' THEN 2 ELSE 3 END,\n             a.raised_at DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Cảnh báo đang mở",
+      "type": "table",
+      "description": "Sắp theo mức độ rồi đến thời gian. Xác nhận/xoá cảnh báo làm trên app, không làm ở Grafana.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mức độ"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "CRITICAL": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "MAJOR": {
+                        "color": "orange",
+                        "index": 1
+                      },
+                      "WARNING": {
+                        "color": "yellow",
+                        "index": 2
+                      },
+                      "INFO": {
+                        "color": "blue",
+                        "index": 3
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "HACCP"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "CÓ": {
+                        "color": "red",
+                        "index": 0
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      }
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "id": 14,
+      "panels": [],
+      "title": "KẾ TOÁN — hoá đơn điện TOU, cơ cấu giá vốn, tuổi nợ",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
+      "id": 15,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(o.started_at, '1d'),\n               SUM(o.revenue_vnd) AS \"Doanh thu\",\n               SUM(o.electricity_cost_vnd) AS \"Tiền điện\"\n        FROM service_orders o\n        WHERE o.status <> 'CANCELLED'\n          AND $__timeFilter(o.started_at)\n        GROUP BY 1\n        ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Doanh thu vs tiền điện theo ngày",
+      "type": "timeseries",
+      "description": "Khoảng cách hai đường là phần còn lại sau tiền điện; chưa trừ môi lạnh, nhân công, bảo trì, chi phí chung.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "VND",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "unit": "currencyVND"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 30
+      },
+      "id": 16,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT x.label AS \"Khoản mục\", x.value AS \"value\"\n        FROM (\n            SELECT SUM(electricity_cost_vnd)   AS e,\n                   SUM(refrigerant_cost_vnd)   AS r,\n                   SUM(labor_cost_vnd)         AS l,\n                   SUM(maintenance_cost_vnd)   AS m,\n                   SUM(overhead_cost_vnd)      AS o\n            FROM service_orders\n            WHERE status <> 'CANCELLED'\n        ) s\n        CROSS JOIN LATERAL (VALUES\n            ('Tiền điện',     s.e),\n            ('Môi lạnh',      s.r),\n            ('Nhân công',     s.l),\n            ('Bảo trì',       s.m),\n            ('Chi phí chung', s.o)\n        ) AS x(label, value)\n        WHERE x.value > 0\n        ORDER BY x.value DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Cơ cấu giá vốn (luỹ kế)",
+      "type": "piechart",
+      "description": "Tiền điện thường là khoản lớn nhất, nhưng môi lạnh R404A và nhân công mới là chỗ hay rò rỉ biên lợi nhuận.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "unit": "currencyVND"
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 30
+      },
+      "id": 17,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH open_inv AS (\n            SELECT GREATEST(0, r.amount_vnd - r.paid_amount_vnd) AS outstanding,\n                   GREATEST(0, FLOOR(EXTRACT(EPOCH FROM ((now() AT TIME ZONE 'utc') - r.due_at)) / 86400))::int AS overdue_days\n            FROM receivables r\n            WHERE r.status IN ('OPEN', 'PARTIAL')\n        )\n        SELECT CASE WHEN overdue_days = 0   THEN '0. Trong hạn'\n                    WHEN overdue_days <= 30 THEN '1. 1-30 ngày'\n                    WHEN overdue_days <= 60 THEN '2. 31-60 ngày'\n                    WHEN overdue_days <= 90 THEN '3. 61-90 ngày'\n                    ELSE '4. Trên 90 ngày' END AS \"Nhóm tuổi nợ\",\n               SUM(outstanding) AS \"Số tiền\"\n        FROM open_inv\n        GROUP BY 1\n        ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Tuổi nợ",
+      "type": "barchart",
+      "description": "Nhóm tuổi suy ra từ due_at, không lưu trạng thái OVERDUE trong DB.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "unit": "currencyVND"
+        },
+        "overrides": []
+      },
+      "options": {
+        "barRadius": 0.1,
+        "barWidth": 0.7,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 38
+      },
+      "id": 18,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT b.tenant_code AS \"Khách thuê\",\n               b.period_start AT TIME ZONE 'UTC' AS \"Từ\",\n               b.period_end   AT TIME ZONE 'UTC' AS \"Đến\",\n               ROUND(b.total_kwh::numeric, 1)    AS \"Tổng kWh\",\n               ROUND(b.peak_kwh::numeric, 1)     AS \"Cao điểm\",\n               ROUND(b.normal_kwh::numeric, 1)   AS \"Bình thường\",\n               ROUND(b.off_peak_kwh::numeric, 1) AS \"Thấp điểm\",\n               b.electricity_vnd  AS \"Tiền điện\",\n               b.service_fee_vnd  AS \"Phí dịch vụ\",\n               b.total_vnd        AS \"Tổng cộng\",\n               COALESCE(b.external_invoice_id, '(nội bộ)') AS \"Invoice Ninja\"\n        FROM billed_invoices b\n        ORDER BY b.period_end DESC\n        LIMIT 50",
+          "refId": "A"
+        }
+      ],
+      "title": "Hoá đơn điện đã xuất (TOU 3 khung giá)",
+      "type": "table",
+      "description": "Kỳ billing được khoá bằng UniqueConstraint (tenant_code, period_start, period_end) nên gọi lại đúng kỳ sẽ trả về bản ghi cũ, không sinh hoá đơn trùng.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/(VND|Tiền điện|Phí dịch vụ|Tổng cộng)/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyVND"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "/kWh/"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "kwatthour"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      }
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 38
+      },
+      "id": 19,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT c.name AS \"Khách hàng\",\n               SUM(GREATEST(0, r.amount_vnd - r.paid_amount_vnd)) AS \"Nợ quá hạn\"\n        FROM receivables r\n        JOIN customers c ON c.id = r.customer_id\n        WHERE r.status IN ('OPEN', 'PARTIAL')\n          AND r.due_at <= (now() AT TIME ZONE 'utc') - interval '1 day'\n        GROUP BY c.name\n        HAVING SUM(GREATEST(0, r.amount_vnd - r.paid_amount_vnd)) > 0\n        ORDER BY 2 DESC\n        LIMIT 10",
+          "refId": "A"
+        }
+      ],
+      "title": "Top 10 khách hàng nợ quá hạn",
+      "type": "barchart",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "unit": "currencyVND"
+        },
+        "overrides": []
+      },
+      "options": {
+        "barRadius": 0.1,
+        "barWidth": 0.6,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "hidden",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0
+      },
+      "description": "Chỉ cộng những hoá đơn ĐÃ quá hạn (trễ từ 1 ngày trọn trở lên), giống hệt `top_debtors` của `/api/debts`. Khoản chưa đến hạn không nằm ở đây — muốn xem đủ thì nhìn panel Tuổi nợ bên cạnh."
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thermal_biz_postgres"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 46
+      },
+      "id": 20,
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thermal_biz_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(total_kwh), 0)    AS \"Tổng kWh\",\n               COALESCE(SUM(peak_kwh), 0)     AS \"Cao điểm\",\n               COALESCE(SUM(normal_kwh), 0)   AS \"Bình thường\",\n               COALESCE(SUM(off_peak_kwh), 0) AS \"Thấp điểm\"\n        FROM billed_invoices",
+          "refId": "A"
+        }
+      ],
+      "title": "Sản lượng điện đã lập hoá đơn theo khung giá",
+      "type": "stat",
+      "description": "Tỷ trọng cao điểm càng cao thì giá điện bình quân càng đắt — đây là chỉ báo để dời tải (load shifting) sang khung 22:00-04:00.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "kwatthour"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      }
+    }
+  ],
+  "preload": false,
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "thermalbiz",
+    "haccp",
+    "esco",
+    "cong-no"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "timezone": "browser",
+  "title": "ThermalBiz — Điều hành Nhiệt × Kinh doanh",
+  "uid": "thermal-biz-command-center",
+  "version": 1,
+  "weekStart": "monday"
+}

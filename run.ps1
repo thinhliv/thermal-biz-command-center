@@ -87,7 +87,7 @@ switch ($Action) {
         if ((Invoke-EnvCheck) -ne 0) { Write-Host "Sua .env truoc khi khoi chay." -ForegroundColor Red; exit 1 }
         Write-Host "-> Khoi chay Huong A (ThingsBoard + ERPNext + Grafana + Connector A)..." -ForegroundColor Green
         Invoke-Compose $ComposeEnterprise @("up", "-d")
-        $tbPort = Get-EnvValue "TB_PORT" "8080"
+        $tbPort = Get-EnvValue "TB_PORT" "8083"
         $grafPort = Get-EnvValue "GRAFANA_PORT" "3000"
         Write-Host "Da khoi chay! Grafana: http://localhost:$grafPort | ThingsBoard: http://localhost:$tbPort" -ForegroundColor Yellow
     }

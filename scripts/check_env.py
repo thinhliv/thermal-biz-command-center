@@ -14,7 +14,11 @@ TARGETS = [
     "docker-compose.yml",
     "docker/docker-compose.enterprise.yml",
     "docker/docker-compose.lightweight.yml",
-    "grafana/provisioning/datasources/datasources.yaml",
+    # Moi stack mot file datasource rieng (Grafana mount tung file, khong mount ca thu muc),
+    # nen phai quet ca ba. Quet thieu file nao thi stack do len voi password rong.
+    "grafana/provisioning/datasources/app.yaml",
+    "grafana/provisioning/datasources/enterprise.yaml",
+    "grafana/provisioning/datasources/lightweight.yaml",
 ]
 
 # ${NAME} | ${NAME:?msg} | ${NAME?msg} | ${NAME:-default} | ${NAME-default}

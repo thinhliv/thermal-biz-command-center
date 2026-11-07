@@ -1,0 +1,15 @@
+# Provider dashboard cho HUONG B (Invoice Ninja).
+apiVersion: 1
+
+providers:
+  - name: ESCO Billing
+    orgId: 1
+    folder: Hướng B — Billing ESCO
+    type: file
+    disableDeletion: false
+    editable: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards/lightweight
+      foldersFromFilesStructure: false

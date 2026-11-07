@@ -1,0 +1,28 @@
+# Datasource cho STACK UNG DUNG (docker-compose.yml o thu muc goc).
+# Chi co 1 nguon: Postgres cua backend tu viet, schema do Alembic quan ly.
+#
+# `uid` BAT BUOC phai dat tuong minh: Grafana tu sinh uid ngau nhien cho datasource
+# provisioned, ma panel trong dashboard tham chieu bang uid. Khong dat uid thi moi
+# panel deu bao "Datasource was not found".
+apiVersion: 1
+
+datasources:
+  - name: ThermalBiz Postgres
+    uid: thermal_biz_postgres
+    type: postgres
+    access: proxy
+    url: db:5432
+    database: ${POSTGRES_DB}
+    user: ${POSTGRES_USER}
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: false
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+    # Mot stack chi co 1 datasource nen no la mac dinh.
+    isDefault: true
+    editable: true

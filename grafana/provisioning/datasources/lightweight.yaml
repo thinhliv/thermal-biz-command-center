@@ -1,0 +1,27 @@
+# Datasource cho HUONG B (docker/docker-compose.lightweight.yml).
+# Chi khai bao nhung host that su ton tai trong stack nay.
+# Stack B KHONG chay ThingsBoard / ERPNext, nen TB_DB_PASSWORD va ERP_DB_PASSWORD
+# khong duoc doi hoi o day.
+#
+# Home Assistant co recorder SQLite nam BEN TRONG container cua no, Grafana khong
+# voi toi duoc. So lieu dong ho dien tu HA di theo duong khac:
+#   HA -> connector_b -> POST /api/ingest/billing -> bang meter_readings / billed_invoices
+# cua backend tu viet. Man hinh doc so lieu do la app React, khong phai Grafana.
+apiVersion: 1
+
+datasources:
+  - name: Invoice Ninja MySQL
+    uid: invoiceninja_mysql
+    type: mysql
+    access: proxy
+    url: ninja_db:3306
+    database: ${NINJA_DB_NAME}
+    user: ${NINJA_DB_USER}
+    secureJsonData:
+      password: ${NINJA_DB_PASSWORD}
+    jsonData:
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+    isDefault: true
+    editable: true

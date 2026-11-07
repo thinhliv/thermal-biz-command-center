@@ -1,0 +1,1942 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "Dashboard KY THUAT cho to van hanh cua HUONG A (stack enterprise): ThingsBoard la nguon telemetry/canh bao, ERPNext la nguon hoa don - cong no - vat tu lanh. Day KHONG phai man hinh dieu hanh BGĐ; man hinh BGĐ la app React tu viet (xem README).",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana",
+        "uid": "-- Grafana --"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "### Trạng thái xác minh của dashboard này\n\n**SQL ở đây được viết dựa trên schema gốc tải trực tiếp từ mã nguồn**, không phải đoán:\n\n- ThingsBoard `release-4.2` — `dao/src/main/resources/sql/schema-entities.sql`, `schema-ts-psql.sql`, `schema-ts-latest-psql.sql`, `schema-views.sql`. Image `thingsboard/tb-postgres:latest` hiện là **4.2.x**.\n- ERPNext `version-15` — DocType JSON của `Sales Invoice`, `Sales Invoice Item`, `Item`, `Bin`, `Asset`, `Customer`.\n\n**Nhưng chưa chạy được trên database thật**: máy dựng dashboard này không có Docker/Postgres/MariaDB, nên các truy vấn dưới đây **chưa được thực thi để đối chiếu số liệu**. Dashboard của app tự viết (`ThermalBiz — Điều hành Nhiệt × Kinh doanh`) thì **đã** được chạy và đối chiếu từng con số với API.\n\nHai chỗ bạn gần như chắc chắn phải chỉnh cho khớp thực tế triển khai:\n\n1. **Tên key telemetry** — chọn ở biến `$metric` (danh sách lấy thẳng từ `key_dictionary` của ThingsBoard, nên chỉ hiện những key thật sự tồn tại).\n2. **Bộ lọc vật tư lạnh** ở panel *Tồn kho vật tư lạnh* — đang lọc theo `item_name`/`item_group` chứa `R404A`/`R134A`/`Gas`/`Lạnh`. Danh mục `Item` là do bạn đặt tên.\n\nNếu một panel báo *No data*, khả năng cao là hệ thống chưa có dữ liệu cho key/khoảng thời gian đó — **không phải** panel sai.",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.0.0",
+      "title": "Đọc trước khi dùng",
+      "type": "text"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 2,
+      "panels": [],
+      "title": "THINGSBOARD — THIẾT BỊ, TELEMETRY & CẢNH BÁO",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thingsboard_postgres"
+      },
+      "description": "Tổng số thiết bị (device) đã khai báo trong ThingsBoard, bất kể đang online hay không. Nguồn: bảng `device`.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "noValue": "Chưa có thiết bị nào",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 5
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thingsboard_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Thiết bị\"\nFROM device",
+          "refId": "A"
+        }
+      ],
+      "title": "Thiết bị đã đăng ký",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thingsboard_postgres"
+      },
+      "description": "Cột `active` lấy từ view `device_info_view` do chính ThingsBoard định nghĩa (attribute SERVER_SCOPE key='active'), nên khớp với trạng thái UI của ThingsBoard chứ không phải suy luận riêng.\n\nChú ý: `active` là do ThingsBoard tự đặt dựa trên lần nhận telemetry cuối và ngưỡng inactivity trong device profile — không phải là `ping`.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "noValue": "Chưa có thiết bị nào",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 5
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thingsboard_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) FILTER (WHERE active) AS \"Đang hoạt động\",\n       COUNT(*) FILTER (WHERE NOT active) AS \"Ngoại tuyến\"\nFROM device_info_view",
+          "refId": "A"
+        }
+      ],
+      "title": "Thiết bị đang hoạt động",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thingsboard_postgres"
+      },
+      "description": "Cảnh báo đang mở = `cleared = false`.\n\nQuan trọng: bảng `alarm` của ThingsBoard **không có cột `status`** kể từ bản 3.5 — trạng thái được suy ra từ hai cột boolean `acknowledged` và `cleared`. Mọi truy vấn ở đây dùng `alarm_info` (view chính thức của ThingsBoard) nên không phải tự suy luận.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "noValue": "Không có cảnh báo nào",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 10
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 5
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thingsboard_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Đang mở\"\nFROM alarm\nWHERE cleared = false",
+          "refId": "A"
+        }
+      ],
+      "title": "Cảnh báo đang mở",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thingsboard_postgres"
+      },
+      "description": "Số cảnh báo vừa đang mở vừa chưa ai xác nhận (`acknowledged = false`) — đây là phần việc còn tồn của tổ vận hành. Con số này khác 0 kéo dài nghĩa là cảnh báo đang bị bỏ qua, nguy hiểm hơn cả số lượng cảnh báo.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "noValue": "Không có cảnh báo nào",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 5
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thingsboard_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Chưa xác nhận\"\nFROM alarm\nWHERE cleared = false\n  AND acknowledged = false",
+          "refId": "A"
+        }
+      ],
+      "title": "Cảnh báo mở chưa xác nhận",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thingsboard_postgres"
+      },
+      "description": "Diễn biến lịch sử của key telemetry `$metric` trên các thiết bị `$device`, đọc từ bảng phân vùng `ts_kv`.\n\nHai điểm về schema ThingsBoard cần biết:\n\n- `ts_kv.ts` là **BIGINT epoch milli-giây**, không phải timestamp. `$__timeFilter(ts)` sẽ sai, nên ở đây lọc bằng `ts BETWEEN (extract(epoch FROM $__timeFrom()) * 1000)::bigint AND ...` để Postgres cắt được phân vùng.\n- Mỗi key chỉ ghi vào **một** cột giá trị (`dbl_v` / `long_v` / `bool_v` / `str_v` / `json_v`). Key số có thể nằm ở `long_v` nếu gateway gửi số nguyên, nên phải `COALESCE(dbl_v, long_v::double precision)` — chỉ đọc `dbl_v` sẽ mất dữ liệu một cách âm thầm.\n\n- Bộ lọc thiết bị dùng toán tử khớp biểu thức chính quy của Postgres với định dạng `regex` của biến `device`, chứ không ghép thành danh sách `IN (...)`. Trên một hệ ThingsBoard vừa cài, bảng `device` còn rỗng nên biến này không có giá trị nào: `IN ()` là lỗi cú pháp làm panel chết ngay lần mở đầu tiên, còn một biểu thức rỗng chỉ đơn giản trả về 0 dòng.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 8,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 9
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "min",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "maxHeight": 600,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thingsboard_postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT to_timestamp(k.ts / 1000) AS \"time\",\n       d.name AS metric,\n       COALESCE(k.dbl_v, k.long_v::double precision) AS value\nFROM ts_kv k\nJOIN device d ON d.id = k.entity_id\nWHERE k.key = (SELECT key_id FROM key_dictionary WHERE key = '$metric')\n  AND d.name ~ '^(${device:regex})$'\n  AND k.ts BETWEEN (extract(epoch FROM $__timeFrom()) * 1000)::bigint\n               AND (extract(epoch FROM $__timeTo()) * 1000)::bigint\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "$metric theo thiết bị",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thingsboard_postgres"
+      },
+      "description": "Phân bố cảnh báo đang mở theo mức độ. ThingsBoard lưu `severity` dạng chuỗi in hoa: CRITICAL / MAJOR / MINOR / WARNING / INDETERMINATE. Hàng trống được gom về INDETERMINATE để không có cảnh báo nào biến mất khỏi biểu đồ.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 9
+      },
+      "id": 8,
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.7,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "maxHeight": 600,
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thingsboard_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(NULLIF(severity, ''), 'INDETERMINATE') AS \"Mức độ\",\n       COUNT(*) AS \"Số cảnh báo\"\nFROM alarm\nWHERE cleared = false\nGROUP BY 1\nORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Cảnh báo đang mở theo mức độ",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thingsboard_postgres"
+      },
+      "description": "Giá trị mới nhất của key `$metric` trên từng thiết bị, đọc từ `ts_kv_latest`.\n\n`ts_kv_latest` **không có cột `entity_type`** (đã bị bỏ từ ThingsBoard 3.x) và khoá chính là `(entity_id, key)`, nên muốn giới hạn ở thiết bị thì **bắt buộc** phải join `device.id = ts_kv_latest.entity_id` — không có cách nào khác.\n\nDùng `LEFT JOIN` chứ không phải `JOIN`: thiết bị chưa từng gửi key này vẫn phải hiện ra với ô trống, vì \"thiếu dữ liệu\" là thông tin vận hành quan trọng không kém gì dữ liệu bất thường.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Đang hoạt động"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "false": {
+                        "color": "red",
+                        "index": 1,
+                        "text": "NGOẠI TUYẾN"
+                      },
+                      "true": {
+                        "color": "green",
+                        "index": 0,
+                        "text": "HOẠT ĐỘNG"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Thời điểm"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocal"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tuổi dữ liệu"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "id": 9,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Thiết bị"
+          }
+        ]
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thingsboard_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT d.name AS \"Thiết bị\",\n       COALESCE(NULLIF(d.label, ''), '') AS \"Nhãn\",\n       COALESCE(NULLIF(d.type, ''), '') AS \"Loại thiết bị\",\n       vi.active AS \"Đang hoạt động\",\n       CASE WHEN l.ts IS NULL THEN NULL ELSE to_timestamp(l.ts / 1000) END AS \"Thời điểm\",\n       CASE WHEN l.ts IS NULL THEN NULL\n            ELSE ROUND((extract(epoch FROM now()) - l.ts / 1000.0)::numeric, 0)\n       END AS \"Tuổi dữ liệu\",\n       ROUND(COALESCE(l.dbl_v, l.long_v::double precision)::numeric, 3) AS \"Giá trị\",\n       COALESCE(l.str_v, l.bool_v::text) AS \"Giá trị chuỗi\"\nFROM device d\nJOIN device_info_view vi ON vi.id = d.id\nLEFT JOIN ts_kv_latest l\n       ON l.entity_id = d.id\n      AND l.key = (SELECT key_id FROM key_dictionary WHERE key = '$metric')\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Giá trị mới nhất của từng thiết bị ($metric)",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thingsboard_postgres"
+      },
+      "description": "Danh sách cảnh báo đang mở, lấy thẳng từ view `alarm_info` của ThingsBoard.\n\nLý do dùng view thay vì tự join: `alarm.originator_type` là **số nguyên**, và bảng mã của nó **thay đổi giữa các phiên bản** (bản 4.2 dùng 9=ENTITY_VIEW, 13=DEVICE_PROFILE, 14=ASSET_PROFILE, 18=EDGE; bản master dùng 16/22/23/27). View `alarm_info` tự ánh xạ sang tên đối tượng nên dashboard này không vỡ khi nâng ThingsBoard.\n\n`status` trong view là một trong ACTIVE_UNACK / ACTIVE_ACK / CLEARED_UNACK / CLEARED_ACK.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Bắt đầu"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocal"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Đã mở"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Mức độ"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "CRITICAL": {
+                        "color": "red",
+                        "index": 0
+                      },
+                      "MAJOR": {
+                        "color": "orange",
+                        "index": 1
+                      },
+                      "MINOR": {
+                        "color": "yellow",
+                        "index": 2
+                      },
+                      "WARNING": {
+                        "color": "yellow",
+                        "index": 3
+                      },
+                      "INDETERMINATE": {
+                        "color": "blue",
+                        "index": 4
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trạng thái"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "ACTIVE_UNACK": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "Đang mở — chưa xác nhận"
+                      },
+                      "ACTIVE_ACK": {
+                        "color": "orange",
+                        "index": 1,
+                        "text": "Đang mở — đã xác nhận"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "id": 10,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Bắt đầu"
+          }
+        ]
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thingsboard_postgres"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT to_timestamp(start_ts / 1000) AS \"Bắt đầu\",\n       ROUND((extract(epoch FROM now()) - start_ts / 1000.0)::numeric, 0) AS \"Đã mở\",\n       COALESCE(NULLIF(type, ''), '(không rõ loại)') AS \"Loại cảnh báo\",\n       COALESCE(NULLIF(severity, ''), 'INDETERMINATE') AS \"Mức độ\",\n       originator_name AS \"Thiết bị / đối tượng\",\n       status AS \"Trạng thái\",\n       COALESCE(NULLIF(assignee_email, ''), 'Chưa phân công') AS \"Người phụ trách\"\nFROM alarm_info\nWHERE cleared = false\nORDER BY start_ts DESC\nLIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "title": "Cảnh báo đang mở",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "thingsboard_postgres"
+      },
+      "description": "Số cảnh báo mới phát sinh (`created_time`), gộp theo khoảng thời gian bạn chọn trên thanh thời gian.\n\nGom bucket bằng số học thuần `(created_time / $__interval_ms) * ($__interval_ms / 1000)` thay vì `$__timeGroup()`, vì `created_time` là BIGINT epoch-milli-giây chứ không phải cột timestamp — macro thời gian của Grafana không áp dụng trực tiếp được.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 36
+      },
+      "id": 11,
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "maxHeight": 600,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "thingsboard_postgres"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT to_timestamp((created_time / $__interval_ms) * ($__interval_ms / 1000)) AS \"time\",\n       COALESCE(NULLIF(severity, ''), 'INDETERMINATE') AS metric,\n       COUNT(*) AS value\nFROM alarm\nWHERE created_time BETWEEN (extract(epoch FROM $__timeFrom()) * 1000)::bigint\n                       AND (extract(epoch FROM $__timeTo()) * 1000)::bigint\nGROUP BY 1, 2\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Cảnh báo mới phát sinh",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "id": 12,
+      "panels": [],
+      "title": "ERPNEXT — DOANH THU, CÔNG NỢ & VẬT TƯ LẠNH",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "erpnext_mariadb"
+      },
+      "description": "Doanh thu từ đầu tháng dương lịch tới nay.\n\nBa quyết định nghiệp vụ trong câu truy vấn này:\n\n- **`docstatus = 1`** — bắt buộc. ERPNext giữ bản nháp (`docstatus = 0`) ngay trong `tabSales Invoice`; thiếu điều kiện này là cộng cả những hoá đơn chưa từng được phát hành.\n- **`base_grand_total`, không phải `grand_total`** — `grand_total` tính theo tiền tệ của khách hàng. Cộng `grand_total` của một hoá đơn USD với một hoá đơn VND ra một con số vô nghĩa mà không có dấu hiệu nào cảnh báo. `base_grand_total` đã quy về tiền tệ của công ty.\n- **Không loại trừ `is_return`** — hoá đơn trả hàng có `base_grand_total` âm, giữ lại thì tổng mới là doanh thu *thuần*. Loại ra sẽ báo cáo doanh thu cao hơn thực tế.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "noValue": "Chưa có hoá đơn nào trong tháng",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 45
+      },
+      "id": 13,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "erpnext_mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(`base_grand_total`), 0) AS \"Doanh thu tháng này\"\nFROM `tabSales Invoice`\nWHERE `docstatus` = 1\n  AND `posting_date` >= DATE_FORMAT(CURDATE(), '%Y-%m-01')",
+          "refId": "A"
+        }
+      ],
+      "title": "Doanh thu tháng này (tiền tệ công ty)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "erpnext_mariadb"
+      },
+      "description": "Tổng số tiền khách hàng còn nợ trên các hoá đơn đã phát hành.\n\n`outstanding_amount` cũng tính theo tiền tệ của khách hàng và ERPNext **không có** cột `base_outstanding_amount`, nên ở đây quy đổi bằng `conversion_rate` của chính hoá đơn. `COALESCE(NULLIF(conversion_rate, 0), 1)` để phòng dòng có `conversion_rate` = 0 hoặc NULL — nếu không cả tổng sẽ thành 0 hoặc NULL mà không ai biết.\n\nChỉ tính `outstanding_amount > 0`: hoá đơn đã thu xong hoặc hoá đơn âm (khách đang có tiền tạm ứng) không phải là nợ phải thu.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "noValue": "Không có công nợ",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 45
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "erpnext_mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(`outstanding_amount` * COALESCE(NULLIF(`conversion_rate`, 0), 1)), 0) AS \"Còn phải thu\"\nFROM `tabSales Invoice`\nWHERE `docstatus` = 1\n  AND `outstanding_amount` > 0",
+          "refId": "A"
+        }
+      ],
+      "title": "Còn phải thu (đã quy đổi tiền tệ)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "erpnext_mariadb"
+      },
+      "description": "Số hoá đơn đã phát hành, còn tiền chưa thu và đã qua `due_date`.\n\nCố ý **không** dùng cột `status` của ERPNext để đếm quá hạn: ERPNext có sẵn giá trị `'Overdue'` nhưng nó chỉ được cập nhật khi có tiến trình nền chạy, nên có thể trễ. Ở đây so trực tiếp `due_date < CURDATE()` để con số luôn đúng tại thời điểm xem.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "noValue": "Không có hoá đơn quá hạn",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 45
+      },
+      "id": 15,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "erpnext_mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Hoá đơn quá hạn\"\nFROM `tabSales Invoice`\nWHERE `docstatus` = 1\n  AND `outstanding_amount` > 0\n  AND `due_date` IS NOT NULL\n  AND `due_date` < CURDATE()",
+          "refId": "A"
+        }
+      ],
+      "title": "Hoá đơn quá hạn",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "erpnext_mariadb"
+      },
+      "description": "Tồn kho gas lạnh R404A cộng dồn trên tất cả các kho.\n\nLấy từ `tabBin` — bảng do ERPNext tự duy trì, mỗi dòng là một cặp (vật tư × kho). **`actual_qty` là tồn kho có thật ngay lúc này**; `projected_qty` là con số dự báo đã trừ phần giữ cho đơn hàng/ sản xuất. Dùng nhầm `projected_qty` để quyết định mua hàng sẽ dẫn tới mua thiếu, vì nó đã bị trừ trước những lô chưa xuất.\n\nKhớp vật tư qua `tabItem.name = tabBin.item_code`: DocType `Item` đặt `autoname: field:item_code` nên hai giá trị này trùng nhau.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "mappings": [],
+          "noValue": "Chưa khai báo vật tư R404A",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 45
+      },
+      "id": 16,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "erpnext_mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(b.`actual_qty`), 0) AS \"R404A tồn thực tế\",\n       COALESCE(SUM(b.`projected_qty`), 0) AS \"R404A dự báo\"\nFROM `tabBin` b\nJOIN `tabItem` i ON i.`name` = b.`item_code`\nWHERE UPPER(i.`item_name`) LIKE '%R404A%'\n   OR UPPER(i.`item_code`) LIKE '%R404A%'",
+          "refId": "A"
+        }
+      ],
+      "title": "Tồn kho gas lạnh R404A (kg)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "erpnext_mariadb"
+      },
+      "description": "Doanh thu theo ngày phát hành hoá đơn (`posting_date`), đã quy về tiền tệ công ty bằng `base_grand_total`.\n\n`posting_date` là cột kiểu DATE nên `$__timeFilter()` dùng được trực tiếp. Lưu ý `creation`/`modified` của Frappe là `datetime(6)` **naive theo múi giờ của site** (mặc định UTC với frappe_docker), còn `posting_date` là ngày nghiệp vụ — vẽ theo ngày nghiệp vụ mới đúng ý kế toán.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 49
+      },
+      "id": 17,
+      "options": {
+        "legend": {
+          "calcs": [
+            "sum"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "maxHeight": 600,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "erpnext_mariadb"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT `posting_date` AS \"time\",\n       SUM(`base_grand_total`) AS \"Doanh thu\"\nFROM `tabSales Invoice`\nWHERE `docstatus` = 1\n  AND $__timeFilter(`posting_date`)\nGROUP BY 1\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Doanh thu theo ngày",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "erpnext_mariadb"
+      },
+      "description": "10 khách hàng còn nợ nhiều nhất, đã quy đổi tiền tệ.\n\nƯu tiên `customer_name` (tên hiển thị) và chỉ lùi về `customer` (mã) khi tên rỗng — Frappe cho phép `customer_name` trống, và một biểu đồ toàn mã khách hàng thì không đọc được.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-GrYlRd"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 49
+      },
+      "id": 18,
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.75,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "maxHeight": 600,
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "erpnext_mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(NULLIF(`customer_name`, ''), `customer`) AS \"Khách hàng\",\n       SUM(`outstanding_amount` * COALESCE(NULLIF(`conversion_rate`, 0), 1)) AS \"Còn phải thu\"\nFROM `tabSales Invoice`\nWHERE `docstatus` = 1\n  AND `outstanding_amount` > 0\nGROUP BY 1\nHAVING SUM(`outstanding_amount` * COALESCE(NULLIF(`conversion_rate`, 0), 1)) > 0\nORDER BY 2 DESC\nLIMIT 10",
+          "refId": "A"
+        }
+      ],
+      "title": "Top 10 khách hàng còn nợ",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "erpnext_mariadb"
+      },
+      "description": "Hoá đơn đã phát hành, còn nợ và đã quá hạn, xếp theo số tiền lớn nhất.\n\nCột `Trạng thái ERPNext` giữ nguyên chuỗi gốc của hệ thống (Draft / Submitted / Paid / Partly Paid / Unpaid / Overdue / Credit Note Issued / Return / Cancelled / Internal Transfer …) để đối chiếu được với màn hình ERPNext. ERPNext **không có** trạng thái `'Sent'` — ai quen Invoice Ninja sẽ tìm và không thấy.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Số ngày quá hạn"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "yellow",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 31
+                    },
+                    {
+                      "color": "red",
+                      "value": 61
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Còn phải thu (quy đổi)"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tổng hoá đơn"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 58
+      },
+      "id": 19,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Số ngày quá hạn"
+          }
+        ]
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "erpnext_mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT `name` AS \"Số hoá đơn\",\n       COALESCE(NULLIF(`customer_name`, ''), `customer`) AS \"Khách hàng\",\n       `posting_date` AS \"Ngày lập\",\n       `due_date` AS \"Hạn thanh toán\",\n       DATEDIFF(CURDATE(), `due_date`) AS \"Số ngày quá hạn\",\n       `base_grand_total` AS \"Tổng hoá đơn\",\n       `outstanding_amount` * COALESCE(NULLIF(`conversion_rate`, 0), 1) AS \"Còn phải thu (quy đổi)\",\n       `currency` AS \"Tiền tệ\",\n       `status` AS \"Trạng thái ERPNext\",\n       `company` AS \"Công ty\"\nFROM `tabSales Invoice`\nWHERE `docstatus` = 1\n  AND `outstanding_amount` > 0\n  AND `due_date` IS NOT NULL\n  AND `due_date` < CURDATE()\nORDER BY DATEDIFF(CURDATE(), `due_date`) DESC\nLIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "title": "Hoá đơn quá hạn",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "erpnext_mariadb"
+      },
+      "description": "Tồn kho vật tư ngành lạnh theo từng kho, để biết gas còn ở đâu trước khi điều xe.\n\n**Bộ lọc này là phỏng đoán có chủ đích**: danh mục `Item` là do bạn tự đặt tên, nên ở đây lọc theo `item_name`/`item_group` chứa R404A / R134A / R22 / R32 / \"Gas\" / \"Lạnh\" / \"Refrigerant\". Hãy sửa điều kiện `WHERE` cho khớp danh mục thật của bạn.\n\n`actual_qty <> 0` để loại các dòng `tabBin` rỗng — ERPNext tạo sẵn một dòng cho mỗi cặp (vật tư × kho) kể cả khi tồn bằng 0, nên không lọc thì bảng toàn số 0.\n\nCột `Đã giữ` (`reserved_qty`) là phần đã cam kết cho đơn hàng: đây chính là con số để biết gas \"trông còn\" nhưng thực ra không dùng được cho việc bảo trì.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tồn thực tế"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    },
+                    {
+                      "color": "green",
+                      "value": 10
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Đã giữ"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Dự báo"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Đơn giá vốn"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Giá trị tồn"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 67
+      },
+      "id": 20,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Mã vật tư"
+          }
+        ]
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "erpnext_mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT b.`item_code` AS \"Mã vật tư\",\n       i.`item_name` AS \"Tên vật tư\",\n       b.`warehouse` AS \"Kho\",\n       b.`actual_qty` AS \"Tồn thực tế\",\n       b.`reserved_qty` AS \"Đã giữ\",\n       b.`projected_qty` AS \"Dự báo\",\n       b.`stock_uom` AS \"ĐVT\",\n       b.`valuation_rate` AS \"Đơn giá vốn\",\n       b.`stock_value` AS \"Giá trị tồn\"\nFROM `tabBin` b\nJOIN `tabItem` i ON i.`name` = b.`item_code`\nWHERE i.`disabled` = 0\n  AND b.`actual_qty` <> 0\n  AND (UPPER(i.`item_name`) LIKE '%R404A%'\n       OR UPPER(i.`item_name`) LIKE '%R134A%'\n       OR UPPER(i.`item_name`) LIKE '%R22%'\n       OR UPPER(i.`item_name`) LIKE '%R32%'\n       OR UPPER(i.`item_code`) LIKE '%R404A%'\n       OR i.`item_group` LIKE '%Gas%'\n       OR i.`item_group` LIKE '%Lạnh%'\n       OR i.`item_group` LIKE '%Refrigerant%')\nORDER BY b.`item_code`, b.`warehouse`\nLIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "title": "Tồn kho vật tư lạnh theo kho",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "erpnext_mariadb"
+      },
+      "description": "Tài sản (máy nén, kho lạnh, lò hơi…) đang ở trạng thái cần can thiệp: `Out of Order`, `In Maintenance`, `Work In Progress`, hoặc vẫn `Draft`.\n\nTài sản còn `Draft` được đưa vào có chủ đích — đó là tài sản đã mua nhưng chưa được ghi tăng, nên chưa được tính khấu hao và chưa gắn được với thiết bị trong ThingsBoard.\n\n`docstatus <> 2` để loại tài sản đã huỷ. Trạng thái lấy đúng danh sách Select của DocType `Asset` bản v15: Draft / Submitted / Cancelled / Partially Depreciated / Fully Depreciated / Sold / Scrapped / In Maintenance / Out of Order / Issue / Receipt / Capitalized / Work In Progress.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Trạng thái"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "basic",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "Out of Order": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "HỎNG"
+                      },
+                      "In Maintenance": {
+                        "color": "orange",
+                        "index": 1,
+                        "text": "Đang bảo trì"
+                      },
+                      "Work In Progress": {
+                        "color": "yellow",
+                        "index": 2,
+                        "text": "Đang lắp đặt"
+                      },
+                      "Draft": {
+                        "color": "blue",
+                        "index": 3,
+                        "text": "Bản nháp — chưa ghi tăng"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Nguyên giá"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Giá trị còn lại"
+            },
+            "properties": [
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Cần bảo trì"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "0": {
+                        "color": "transparent",
+                        "index": 1,
+                        "text": ""
+                      },
+                      "1": {
+                        "color": "orange",
+                        "index": 0,
+                        "text": "CÓ"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 67
+      },
+      "id": 21,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Trạng thái"
+          }
+        ]
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "erpnext_mariadb"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT `name` AS \"Mã tài sản\",\n       `asset_name` AS \"Tên tài sản\",\n       `item_code` AS \"Mã vật tư\",\n       COALESCE(NULLIF(`location`, ''), '(chưa đặt vị trí)') AS \"Vị trí\",\n       `status` AS \"Trạng thái\",\n       `maintenance_required` AS \"Cần bảo trì\",\n       `purchase_date` AS \"Ngày mua\",\n       `gross_purchase_amount` AS \"Nguyên giá\",\n       `value_after_depreciation` AS \"Giá trị còn lại\"\nFROM `tabAsset`\nWHERE `docstatus` <> 2\n  AND `status` IN ('Out of Order', 'In Maintenance', 'Work In Progress', 'Draft')\nORDER BY FIELD(`status`, 'Out of Order', 'In Maintenance', 'Work In Progress', 'Draft'), `name`\nLIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "title": "Tài sản cần chú ý",
+      "type": "table"
+    }
+  ],
+  "preload": false,
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "thermalbiz",
+    "thingsboard",
+    "erpnext",
+    "van-hanh"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "temperature",
+          "value": "temperature"
+        },
+        "datasource": {
+          "type": "postgres",
+          "uid": "thingsboard_postgres"
+        },
+        "definition": "SELECT key FROM key_dictionary ORDER BY key",
+        "description": "Tên key telemetry trong ThingsBoard. Danh sách lấy trực tiếp từ bảng `key_dictionary` nên chỉ hiện những key thật sự tồn tại trong hệ thống của bạn. `temperature` chỉ là giá trị khởi đầu, gần như chắc chắn bạn phải chọn lại.",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Chỉ số telemetry",
+        "multi": false,
+        "name": "metric",
+        "options": [],
+        "query": "SELECT key FROM key_dictionary ORDER BY key",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "postgres",
+          "uid": "thingsboard_postgres"
+        },
+        "definition": "SELECT name FROM device ORDER BY name",
+        "description": "Thiết bị cần vẽ. Mặc định là tất cả. Nếu hệ thống có hàng nghìn thiết bị thì nên bỏ chọn All và chọn cụ thể — biến này được ghép thành biểu thức chính quy `^(ten1|ten2)$` chứ không phải danh sách `IN (...)`. Lý do: nếu bảng `device` còn rỗng (ThingsBoard vừa cài, chưa có thiết bị nào) thì `IN ()` là lỗi cú pháp và panel chết ngay lần mở đầu tiên, còn `^()$` chỉ đơn giản là không khớp dòng nào. Danh sách quá dài vẫn làm câu truy vấn chậm hẳn, nên hệ thống có hàng nghìn thiết bị thì bỏ chọn All.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Thiết bị",
+        "multi": true,
+        "name": "device",
+        "options": [],
+        "query": "SELECT name FROM device ORDER BY name",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Hướng A — Vận hành công nghiệp (ThingsBoard + ERPNext)",
+  "uid": "industrial-thermal-ops",
+  "version": 1,
+  "weekStart": "monday"
+}

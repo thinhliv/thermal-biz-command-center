@@ -70,18 +70,38 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-false}
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_USERS_DEFAULT_THEME: dark
-      # datasources.yaml noi suy cac bien nay (Grafana ho tro $ENV_VAR trong provisioning)
+      # provisioning/datasources/app.yaml noi suy cac bien nay (Grafana ho tro $ENV_VAR)
       POSTGRES_DB: ${POSTGRES_DB:-thermal_biz_db}
       POSTGRES_USER: ${POSTGRES_USER:-thermal_admin}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      # Mount TUNG FILE, khong mount ca thu muc. Neu mount ca thu muc ../grafana/provisioning
+      # thi stack nao cung nap datasource cua ca 3 stack -> Grafana thu noi toi nhung host
+      # khong ton tai trong mang nay, va nguoi dung thay mot lo datasource chet ma khong
+      # biet cai nao moi la cua minh.
+      - ./grafana/provisioning/datasources/app.yaml:/etc/grafana/provisioning/datasources/app.yaml:ro
+      - ./grafana/provisioning/dashboards/app.yaml:/etc/grafana/provisioning/dashboards/app.yaml:ro
+      - ./grafana/dashboards/app:/var/lib/grafana/dashboards/app:ro
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   pg_data:
   grafana_data:
+
+networks:
+  # Dat ten co dinh de 2 stack trong thu muc docker/ noi vao duoc bang `external: true`.
+  # Day la mang ma connector_a / connector_b dung de day du lieu VAO FastAPI (container
+  # `thermal_api`), dung theo thiet ke "app tu viet la trung tam, OSS la nguon du lieu".
+  # He qua: stack nay phai len TRUOC, neu khong 2 stack kia bao
+  # "network thermalbiz_shared declared as external, but could not be found".
+  default:
+    name: thermalbiz_shared

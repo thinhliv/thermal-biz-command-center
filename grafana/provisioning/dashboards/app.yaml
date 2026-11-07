@@ -1,0 +1,17 @@
+# Provider dashboard cho STACK UNG DUNG.
+# Dashboard nam trong git -> allowUiUpdates=false de khong ai sua tren UI roi bi
+# updateIntervalSeconds ghi de mat. Muon doi thi sua file JSON va mount lai.
+apiVersion: 1
+
+providers:
+  - name: Thermal Biz Command Center
+    orgId: 1
+    folder: Điều hành
+    type: file
+    disableDeletion: false
+    editable: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards/app
+      foldersFromFilesStructure: false

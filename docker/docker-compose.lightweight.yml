@@ -4,6 +4,12 @@
 #
 # Tat ca secret doc tu `.env` o thu muc goc repo. Khoi chay bang:
 #   docker compose --env-file .env -f docker/docker-compose.lightweight.yml up -d
+# hoac:  ./run.ps1 Lightweight
+#
+# STACK NAY PHAI CHAY SAU stack ung dung (`./run.ps1 App`). Ly do: connector_b day chi so
+# cong to vao FastAPI qua mang `thermalbiz_shared`, ma mang do do chinh stack ung dung tao ra.
+# Neu chay truoc, docker bao "network thermalbiz_shared declared as external, but could
+# not be found" - do khong phai loi cua file nay.
 
 services:
   # 1. Home Assistant Core (Local IoT & Metering)
@@ -11,7 +17,12 @@ services:
     image: ghcr.io/home-assistant/home-assistant:stable
     container_name: esco_homeassistant
     restart: unless-stopped
-    privileged: true
+    # KHONG dung `privileged: true`. Container nay mo cong 8123 ra may chu; privileged cho
+    # phep no thoat ra host, va day la repo cong khai nen ai copy cung ke thua cai do.
+    # Neu can doc USB/Zigbee dongle, khai bao dung thiet bi can dung, hep hon nhieu:
+    #   devices:
+    #     - /dev/ttyUSB0:/dev/ttyUSB0
+    # Can mDNS/discovery thi dung `network_mode: host` (luc do bo `ports:` di).
     environment:
       TZ: Asia/Ho_Chi_Minh
     volumes:
@@ -33,6 +44,14 @@ services:
       - ninja_db_data:/var/lib/mysql
     ports:
       - "${NINJA_DB_PORT:-3307}:3306"
+    healthcheck:
+      # healthcheck.sh co san trong image mariadb chinh chu; --innodb_initialized cho
+      # doi toi khi InnoDB xong, tranh bao "healthy" luc server con dang khoi dong.
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # 3. Invoice Ninja (Billing & Invoicing Suite)
   invoiceninja:
@@ -54,9 +73,12 @@ services:
     ports:
       - "${INVOICE_NINJA_PORT:-8088}:80"
     depends_on:
-      - ninja_db
+      # `service_healthy` o DB: Invoice Ninja chay migration luc khoi dong, MariaDB chua
+      # san sang thi migration fail va khong tu chay lai.
+      ninja_db:
+        condition: service_healthy
 
-  # 4. Connector B: Home Assistant to Invoice Ninja Metering Bridge
+  # 4. Connector B: chi so cong to (HA) -> hoa don dien (backend tu viet + Invoice Ninja)
   connector_b:
     build:
       context: ../connectors/ha-to-invoiceninja
@@ -70,18 +92,38 @@ services:
       HASS_TOKEN: ${HASS_TOKEN:-}
       INVOICE_NINJA_URL: ${INVOICE_NINJA_URL:-http://invoiceninja:80}
       INVOICE_NINJA_TOKEN: ${INVOICE_NINJA_TOKEN:-}
+      # Khoa nguoi goi dung de goi VAO connector. Khac voi khoa connector dung de goi
+      # LEN backend - mot khoa cho moi chieu, lo mot chieu khong lo chieu kia.
       CONNECTOR_API_KEY: ${CONNECTOR_B_API_KEY:?CONNECTOR_B_API_KEY must be set in .env}
       SIMULATION_MODE: ${CONNECTOR_B_SIMULATION_MODE:-false}
       TENANT_CLIENT_MAP: ${TENANT_CLIENT_MAP:-{}}
+      # Don gia nay chi la GIA TRI TAM hien thi. Backend moi la nguoi quyet dinh don gia
+      # (SERVICE_RATE_PER_KWH dat o server) de nguoi goi API khong tu khai duoc gia.
       SERVICE_RATE_PER_KWH: ${SERVICE_RATE_PER_KWH:-3500}
       ELECTRICITY_RATE_VND: ${ELECTRICITY_RATE_VND:-2500}
     ports:
       - "${CONNECTOR_B_PORT:-8082}:8082"
+    networks:
+      default:
+      thermalbiz_shared:
     depends_on:
-      - homeassistant
-      - invoiceninja
+      # Chi `service_started`: connector khong ket noi HA/Invoice Ninja luc khoi dong,
+      # chi ket noi khi co yeu cau xuat hoa don. Bat doi `service_healthy` ma khong chac
+      # image co san curl/wget de do thi de lam connector khong bao gio duoc chay.
+      homeassistant:
+        condition: service_started
+      invoiceninja:
+        condition: service_started
+    healthcheck:
+      # python:3.11-slim khong co curl/wget; dung urllib cua chinh no cho chac.
+      test: ["CMD", "python", "-c", "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8082/health', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
-  # 5. Grafana Real-time Executive Cockpit
+  # 5. Grafana - dashboard KY THUAT cho to van hanh
+  #    (khong phai man hinh BGD; man hinh BGD la app React tu viet, xem README)
   grafana:
     image: grafana/grafana:latest
     container_name: esco_grafana
@@ -96,18 +138,39 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-false}
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_USERS_DEFAULT_THEME: dark
-      # datasources.yaml noi suy cac bien nay (Grafana ho tro $ENV_VAR trong provisioning)
-      TB_DB_PASSWORD: ${TB_DB_PASSWORD:?TB_DB_PASSWORD must be set in .env}
-      ERP_DB_PASSWORD: ${ERP_DB_PASSWORD:?ERP_DB_PASSWORD must be set in .env}
+      # provisioning/datasources/lightweight.yaml chi noi suy dung bien nay.
+      # KHONG yeu cau TB_DB_PASSWORD / ERP_DB_PASSWORD: stack B khong chay ThingsBoard
+      # hay ERPNext. Bat nguoi dung khai secret cua dich vu khong ton tai trong stack nay
+      # la ly do khien ca stack khong len duoc ma chang lien quan gi toi loi that.
       NINJA_DB_PASSWORD: ${NINJA_DB_PASSWORD:?NINJA_DB_PASSWORD must be set in .env}
     volumes:
       - esco_grafana_data:/var/lib/grafana
-      - ../grafana/provisioning:/etc/grafana/provisioning
-      - ../grafana/dashboards:/var/lib/grafana/dashboards
+      # Mount TUNG FILE, khong mount ca thu muc. Neu mount ca thu muc ../grafana/provisioning
+      # thi stack nay nap them datasource cua stack A va cua app -> Grafana thu noi toi
+      # nhung host khong ton tai trong mang nay, nguoi dung thay mot lo datasource chet.
+      - ../grafana/provisioning/datasources/lightweight.yaml:/etc/grafana/provisioning/datasources/lightweight.yaml:ro
+      - ../grafana/provisioning/dashboards/lightweight.yaml:/etc/grafana/provisioning/dashboards/lightweight.yaml:ro
+      - ../grafana/dashboards/lightweight:/var/lib/grafana/dashboards/lightweight:ro
     depends_on:
-      - ninja_db
+      ninja_db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   hass_config:
   ninja_db_data:
   esco_grafana_data:
+
+networks:
+  default:
+    name: thermalbiz_lightweight
+  # Mang dung chung voi stack ung dung, de connector_b noi duoc FastAPI (container
+  # `thermal_api`). Stack ung dung phai chay truoc de tao mang nay.
+  thermalbiz_shared:
+    external: true
+    name: thermalbiz_shared

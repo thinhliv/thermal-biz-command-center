@@ -1,0 +1,40 @@
+# Datasource cho HUONG A (docker/docker-compose.enterprise.yml).
+# Chi khai bao nhung host that su ton tai trong stack nay.
+# Stack A KHONG chay Invoice Ninja, nen NINJA_DB_PASSWORD khong duoc doi hoi o day.
+apiVersion: 1
+
+datasources:
+  - name: ThingsBoard Postgres
+    uid: thingsboard_postgres
+    type: postgres
+    access: proxy
+    url: tb_postgres:5432
+    database: ${TB_DB_NAME}
+    user: ${TB_DB_USER}
+    secureJsonData:
+      password: ${TB_DB_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: false
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+    isDefault: true
+    editable: true
+
+  - name: ERPNext MariaDB
+    uid: erpnext_mariadb
+    type: mysql
+    access: proxy
+    url: erp_database:3306
+    database: ${ERP_DB_NAME}
+    user: ${ERP_DB_USER}
+    secureJsonData:
+      password: ${ERP_DB_PASSWORD}
+    jsonData:
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+    isDefault: false
+    editable: true

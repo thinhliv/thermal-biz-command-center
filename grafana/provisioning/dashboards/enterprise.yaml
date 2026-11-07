@@ -1,0 +1,15 @@
+# Provider dashboard cho HUONG A (ThingsBoard + ERPNext).
+apiVersion: 1
+
+providers:
+  - name: Industrial Thermal Ops
+    orgId: 1
+    folder: Hướng A — Vận hành công nghiệp
+    type: file
+    disableDeletion: false
+    editable: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards/enterprise
+      foldersFromFilesStructure: false

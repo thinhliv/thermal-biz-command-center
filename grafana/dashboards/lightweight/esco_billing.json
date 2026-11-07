@@ -1,0 +1,1269 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "Hướng B — Billing ESCO. Nguồn dữ liệu: Invoice Ninja v5 (datasource uid `invoiceninja_mysql`), thiết bị đo đọc qua Home Assistant. Mọi con số ở đây là góc nhìn của Invoice Ninja; con số điều hành chính thức vẫn là app ThermalBiz.",
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana",
+        "uid": "-- Grafana --"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "### Trạng thái xác minh của dashboard này\n\n**SQL ở đây viết theo schema gốc tải trực tiếp từ mã nguồn**, không phải đoán: Invoice Ninja v5, file `database/schema/mysql-schema.sql` (nhánh `v5-develop`). Image `invoiceninja/invoiceninja:latest` hiện là **5.x**.\n\n**Nhưng chưa chạy được trên database thật**: máy dựng dashboard này không có Docker/MariaDB, nên các truy vấn dưới đây **chưa được thực thi để đối chiếu số liệu**. Dashboard của app tự viết (`ThermalBiz — Điều hành Nhiệt × Kinh doanh`) thì **đã** được chạy và đối chiếu từng con số với API.\n\nBa điều cần biết trước khi đọc số:\n\n1. **Không có cột `currency_id` trên `invoices`** — tiền tệ nằm trong `clients.settings` (JSON). `amount`/`balance` do đó tính theo tiền tệ của **khách hàng**. Cộng thô hai hoá đơn khác tiền tệ ra một con số vô nghĩa mà không báo lỗi. Mọi panel ở đây đều quy đổi bằng `exchange_rate`, có chặn tỷ giá 0.\n2. **Đơn vị hiển thị đang đặt là VND** vì app ThermalBiz hạch toán bằng VND. Nếu công ty bạn dùng tiền tệ khác, đổi `unit` trong panel JSON — con số vẫn đúng, chỉ nhãn là sai.\n3. **Không có biến lọc khách hàng.** Mỗi truy vấn tự đủ, để dashboard không thể trắng toàn bộ chỉ vì một biến truy vấn lỗi.\n\nNếu một panel báo *No data*, khả năng cao là chưa có hoá đơn/thanh toán trong khoảng thời gian đã chọn — **không phải** panel sai.",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.0.0",
+      "title": "Đọc trước khi dùng",
+      "type": "text"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "id": 2,
+      "panels": [],
+      "title": "DOANH THU & CÔNG NỢ — INVOICE NINJA v5",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "Tổng số tiền khách còn nợ trên toàn bộ hoá đơn chưa thanh toán.Bộ lọc \"còn phải thu\" dùng ở hầu hết các panel dưới đây, lấy đúng theo Invoice Ninja v5:\n\n- `status_id IN (2, 3)` — 2 = Sent, 3 = Partially Paid. Loại 1 = Draft (chưa từng đòi tiền), 5 = Cancelled, 6 = Reversed.\n- **Không có** `status_id = -1` (Overdue) hay `-2` (Unpaid) trong database: đó là hai trạng thái *tính toán* ở tầng application, không bao giờ được ghi xuống cột. Lọc `status_id = -1` sẽ trả về rỗng vĩnh viễn mà không báo lỗi.\n- `is_proforma = 0` — hoá đơn chiếu lệ không phải khoản phải thu.\n- `is_deleted = 0 AND deleted_at IS NULL` — Invoice Ninja xoá mềm bằng cả hai cột.\n- `balance > 0` — `balance` mới là số còn nợ; `amount` là giá trị gốc của hoá đơn.\n\n**Quy đổi tiền tệ:** `invoices` không có `currency_id`, nên `balance` nằm trong tiền tệ của khách hàng. Con số hiển thị là `balance * COALESCE(NULLIF(exchange_rate, 0), 1)` — quy về tiền tệ công ty, và `NULLIF` chặn trường hợp ai đó nhập tỷ giá 0 (khiến mọi khoản nợ thành 0 mà không báo lỗi).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyVND",
+          "noValue": "Chưa có hoá đơn nào"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 6
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(`i`.`balance` * COALESCE(NULLIF(`i`.`exchange_rate`, 0), 1)), 0) AS \"Còn phải thu\"\nFROM `invoices` AS `i`\nWHERE `i`.`is_deleted` = 0\n  AND `i`.`deleted_at` IS NULL\n  AND `i`.`status_id` IN (2, 3)\n  AND `i`.`is_proforma` = 0\n  AND `i`.`balance` > 0",
+          "refId": "A"
+        }
+      ],
+      "title": "Còn phải thu (đã quy đổi)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "Đếm số hoá đơn, không phải số tiền.\n\n`due_date` là cột **DATETIME** trong khi `date` là **DATE**. Phải bọc `DATE(due_date)` trước khi so với `CURDATE()`: so trực tiếp một DATETIME `'2026-11-07 08:00:00'` với `CURDATE()` = `'2026-11-07 00:00:00'` sẽ báo hoá đơn hạn-hôm-nay là quá hạn ngay từ nửa đêm.\n\nKhông dùng `status_id` để suy ra quá hạn — xem mô tả panel bên cạnh.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "orange",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none",
+          "noValue": "Chưa có hoá đơn nào"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 6
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  SUM(CASE WHEN `i`.`due_date` IS NOT NULL AND DATE(`i`.`due_date`) < CURDATE()\n      THEN 1 ELSE 0 END) AS \"Quá hạn\",\n  SUM(CASE WHEN `i`.`due_date` IS NOT NULL\n           AND DATE(`i`.`due_date`) BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 7 DAY)\n      THEN 1 ELSE 0 END) AS \"Đến hạn trong 7 ngày\"\nFROM `invoices` AS `i`\nWHERE `i`.`is_deleted` = 0\n  AND `i`.`deleted_at` IS NULL\n  AND `i`.`status_id` IN (2, 3)\n  AND `i`.`is_proforma` = 0\n  AND `i`.`balance` > 0",
+          "refId": "A"
+        }
+      ],
+      "title": "Quá hạn / đến hạn trong 7 ngày",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "Số tiền đang trễ hạn thanh toán — con số cần nhìn đầu tiên mỗi sáng.\n\n**Quy đổi tiền tệ:** `invoices` không có `currency_id`, nên `balance` nằm trong tiền tệ của khách hàng. Con số hiển thị là `balance * COALESCE(NULLIF(exchange_rate, 0), 1)` — quy về tiền tệ công ty, và `NULLIF` chặn trường hợp ai đó nhập tỷ giá 0 (khiến mọi khoản nợ thành 0 mà không báo lỗi).",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyVND",
+          "noValue": "Không có nợ quá hạn"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 6
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(SUM(`i`.`balance` * COALESCE(NULLIF(`i`.`exchange_rate`, 0), 1)), 0) AS \"Tiền quá hạn\"\nFROM `invoices` AS `i`\nWHERE `i`.`is_deleted` = 0\n  AND `i`.`deleted_at` IS NULL\n  AND `i`.`status_id` IN (2, 3)\n  AND `i`.`is_proforma` = 0\n  AND `i`.`balance` > 0\n  AND `i`.`due_date` IS NOT NULL AND DATE(`i`.`due_date`) < CURDATE()",
+          "refId": "A"
+        }
+      ],
+      "title": "Tổng tiền quá hạn",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "Hai con số này **khác nhau và đều đúng**:\n\n- **Tiền nhận** = `payments.amount`, tiền thật đã vào.\n- **Đã cấn trừ** = `payments.applied`, phần đã được áp vào hoá đơn cụ thể.\n\nChênh lệch giữa hai số là tiền khách trả trước / chưa cấn trừ. Chỉ nhìn `applied` sẽ báo cáo thiếu tiền mặt đã thu; chỉ nhìn `amount` sẽ không thấy phần chưa trừ nợ.\n\n`status_id = 4` là **Completed**. Invoice Ninja còn 1 = Pending, 2 = Cancelled, 3 = Failed, 5 = Partially Refunded, 6 = Refunded — cộng cả 1/2/3 vào là đếm tiền chưa từng về.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyVND",
+          "noValue": "Chưa có thanh toán nào"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 15,
+        "y": 6
+      },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  COALESCE(SUM(`p`.`amount` * COALESCE(NULLIF(`p`.`exchange_rate`, 0), 1)), 0) AS \"Tiền nhận\",\n  COALESCE(SUM(`p`.`applied` * COALESCE(NULLIF(`p`.`exchange_rate`, 0), 1)), 0) AS \"Đã cấn trừ hoá đơn\"\nFROM `payments` AS `p`\nWHERE `p`.`is_deleted` = 0\n  AND `p`.`deleted_at` IS NULL\n  AND `p`.`status_id` = 4\n  AND `p`.`date` >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)",
+          "refId": "A"
+        }
+      ],
+      "title": "Đã thu trong 30 ngày",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "`clients` không có cột `display_name` (đó là Invoice Ninja v4). Tên khách nằm ở `name`, và cột này **nullable** — mọi chỗ hiển thị tên trong dashboard này đều bọc `COALESCE(NULLIF(name,''), CONCAT('Khách #', id))` để không bao giờ hiện ô trống.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "purple",
+                "value": null
+              }
+            ]
+          },
+          "unit": "none",
+          "noValue": "Chưa có khách hàng"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 6
+      },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*) AS \"Tổng khách hàng\",\n       SUM(CASE WHEN `c`.`balance` > 0 THEN 1 ELSE 0 END) AS \"Đang còn nợ\"\nFROM `clients` AS `c`\nWHERE `c`.`is_deleted` = 0 AND `c`.`deleted_at` IS NULL",
+          "refId": "A"
+        }
+      ],
+      "title": "Khách hàng",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "Doanh thu ghi nhận theo **ngày lập hoá đơn** (`invoices.date`, kiểu DATE — nên `$__timeFilter()` dùng trực tiếp được).\n\nGồm cả `status_id = 4` (Đã thanh toán): doanh thu đã ghi nhận thì không biến mất chỉ vì khách đã trả. Vẫn loại Draft / Cancelled / Reversed.\n\nDùng `amount` (giá trị gốc) chứ không phải `balance` (số còn nợ) — vẽ `balance` theo ngày lập sẽ cho đường doanh thu tự tụt xuống mỗi lần khách trả tiền, tức là biểu đồ thay đổi cả quá khứ.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyVND"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "maxHeight": 600,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT `i`.`date` AS \"time\",\n       SUM(`i`.`amount` * COALESCE(NULLIF(`i`.`exchange_rate`, 0), 1)) AS \"Giá trị hoá đơn\"\nFROM `invoices` AS `i`\nWHERE `i`.`is_deleted` = 0\n  AND `i`.`deleted_at` IS NULL\n  AND `i`.`status_id` IN (2, 3, 4)\n  AND `i`.`is_proforma` = 0\n  AND $__timeFilter(`i`.`date`)\nGROUP BY 1\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Giá trị hoá đơn lập theo ngày",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "Đặt cạnh panel *Giá trị hoá đơn lập theo ngày* để thấy lệch pha giữa xuất hoá đơn và thu tiền — khoảng cách hai đường chính là vốn lưu động đang nằm ở khách.\n\n`payments` **có** `currency_id` và `exchange_rate` (khác với `invoices`), nên vẫn quy đổi được về tiền tệ công ty.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyVND"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "id": 9,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "maxHeight": 600,
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT `p`.`date` AS \"time\",\n       SUM(`p`.`amount` * COALESCE(NULLIF(`p`.`exchange_rate`, 0), 1)) AS \"Tiền nhận\",\n       SUM(`p`.`applied` * COALESCE(NULLIF(`p`.`exchange_rate`, 0), 1)) AS \"Đã cấn trừ hoá đơn\"\nFROM `payments` AS `p`\nWHERE `p`.`is_deleted` = 0\n  AND `p`.`deleted_at` IS NULL\n  AND `p`.`status_id` = 4\n  AND $__timeFilter(`p`.`date`)\nGROUP BY 1\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Tiền đã thu theo ngày",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "Năm nhóm tuổi nợ **lấy đúng `AGING_BRACKETS` của app ThermalBiz** (`backend/app/services/finance.py`): Trong hạn / 1-30 / 31-60 / 61-90 / Trên 90 ngày. Giữ trùng nhau là chủ ý: khi hai màn hình hiển thị hai cách chia tuổi nợ khác nhau cho cùng một bộ hoá đơn, người dùng sẽ không biết tin cái nào.\n\nThêm nhóm **\"5. Không rõ hạn\"** cho hoá đơn có `due_date IS NULL`. Invoice Ninja cho phép để trống hạn thanh toán; gộp số đó vào \"Trong hạn\" sẽ làm đẹp báo cáo một cách giả tạo.\n\nTiền tố `0.` … `5.` để `ORDER BY 1` xếp đúng thứ tự nghiệp vụ thay vì thứ tự chữ cái.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyVND"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 0,
+        "y": 19
+      },
+      "id": 10,
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.7,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "maxHeight": 600,
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE\n         WHEN `i`.`due_date` IS NULL THEN '5. Không rõ hạn'\n         WHEN DATEDIFF(CURDATE(), DATE(`i`.`due_date`)) <= 0 THEN '0. Trong hạn'\n         WHEN DATEDIFF(CURDATE(), DATE(`i`.`due_date`)) <= 30 THEN '1. 1-30 ngày'\n         WHEN DATEDIFF(CURDATE(), DATE(`i`.`due_date`)) <= 60 THEN '2. 31-60 ngày'\n         WHEN DATEDIFF(CURDATE(), DATE(`i`.`due_date`)) <= 90 THEN '3. 61-90 ngày'\n         ELSE '4. Trên 90 ngày'\n       END AS \"Nhóm tuổi nợ\",\n       SUM(`i`.`balance` * COALESCE(NULLIF(`i`.`exchange_rate`, 0), 1)) AS \"Số tiền\"\nFROM `invoices` AS `i`\nWHERE `i`.`is_deleted` = 0\n  AND `i`.`deleted_at` IS NULL\n  AND `i`.`status_id` IN (2, 3)\n  AND `i`.`is_proforma` = 0\n  AND `i`.`balance` > 0\nGROUP BY 1\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Tuổi nợ",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "Đếm **số hoá đơn**, không phải số tiền — để thấy tỷ lệ hoá đơn đã thu xong so với còn treo.\n\n`status_id` của Invoice Ninja v5: 1 = Draft, 2 = Sent, 3 = Partially Paid, 4 = Paid, 5 = Cancelled, 6 = Reversed. Panel này **không** loại Draft/Cancelled, vì mục đích của nó là cho thấy chúng đang chiếm bao nhiêu.\n\nNhánh `ELSE CONCAT('Khác (', status_id, ')')` để nếu phiên bản sau thêm trạng thái mới thì nó hiện ra thành một lát cắt lạ mắt thay vì âm thầm biến mất.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": [],
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 8,
+        "y": 19
+      },
+      "id": 11,
+      "options": {
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT CASE `i`.`status_id`\n         WHEN 1 THEN '1. Bản nháp'\n         WHEN 2 THEN '2. Đã gửi'\n         WHEN 3 THEN '3. Đã trả một phần'\n         WHEN 4 THEN '4. Đã thanh toán'\n         WHEN 5 THEN '5. Đã huỷ'\n         WHEN 6 THEN '6. Đã đảo'\n         ELSE CONCAT('Khác (', `i`.`status_id`, ')')\n       END AS \"Trạng thái\",\n       COUNT(*) AS \"Số hoá đơn\"\nFROM `invoices` AS `i`\nWHERE `i`.`is_deleted` = 0\n  AND `i`.`deleted_at` IS NULL\n  AND $__timeFilter(`i`.`date`)\nGROUP BY 1\nORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Hoá đơn theo trạng thái",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "Mười khách hàng chiếm nhiều vốn lưu động nhất.\n\nTính từ `invoices` thay vì đọc thẳng `clients.balance`: `clients.balance` là cột **được app cập nhật dần**, có thể lệch với tổng hoá đơn nếu có tiến trình ghi dở. Panel *Số dư khách hàng* ở cuối dashboard tồn tại chính là để bắt ra chỗ lệch đó.\n\nGiới hạn 10 để khớp với `top_debtors` của app.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "currencyVND"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 19
+      },
+      "id": 12,
+      "options": {
+        "barRadius": 0,
+        "barWidth": 0.7,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "stacking": "none",
+        "tooltip": {
+          "maxHeight": 600,
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0,
+        "xTickLabelSpacing": 0
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(NULLIF(`c`.`name`, ''), CONCAT('Khách #', `c`.`id`)) AS \"Khách hàng\",\n       SUM(`i`.`balance` * COALESCE(NULLIF(`i`.`exchange_rate`, 0), 1)) AS \"Còn phải thu\"\nFROM `invoices` AS `i`\nJOIN `clients` AS `c` ON `c`.`id` = `i`.`client_id`\nWHERE `i`.`is_deleted` = 0\n  AND `i`.`deleted_at` IS NULL\n  AND `i`.`status_id` IN (2, 3)\n  AND `i`.`is_proforma` = 0\n  AND `i`.`balance` > 0\nGROUP BY 1\nORDER BY 2 DESC\nLIMIT 10",
+          "refId": "A"
+        }
+      ],
+      "title": "Top 10 khách hàng còn nợ",
+      "type": "barchart"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "Danh sách việc cần gọi điện. Sắp xếp trễ nhất trước; hoá đơn **không có hạn thanh toán đẩy xuống cuối** (`ORDER BY (due_date IS NULL)`) thay vì nhảy lên đầu — chúng không khẩn cấp, chúng chỉ thiếu thông tin, và cần được xử lý theo cách khác.\n\nCột *Số ngày quá hạn* để NULL (không phải 0) khi chưa tới hạn, để không lẫn với \"đúng hạn, trễ 0 ngày\".\n\nCột *Tỷ giá* để trần, không quy đổi: nếu một dòng có tỷ giá khác 1 mà bạn không mong đợi, đó là dấu hiệu hoá đơn được lập sai tiền tệ — cần nhìn thấy, không cần ẩn đi.\n\n`LIMIT 200` để bảng không tải hàng nghìn dòng xuống trình duyệt.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Giá trị hoá đơn"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyVND"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Còn phải thu"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyVND"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ngày lập"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocal"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Hạn thanh toán"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocal"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Số ngày quá hạn"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "d"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tỷ giá"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
+      "id": 13,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT `i`.`number` AS \"Số hoá đơn\",\n       COALESCE(NULLIF(`c`.`name`, ''), CONCAT('Khách #', `c`.`id`)) AS \"Khách hàng\",\n       `i`.`date` AS \"Ngày lập\",\n       DATE(`i`.`due_date`) AS \"Hạn thanh toán\",\n       CASE WHEN `i`.`due_date` IS NULL THEN NULL\n            ELSE DATEDIFF(CURDATE(), DATE(`i`.`due_date`)) END AS \"Số ngày quá hạn\",\n       `i`.`amount` * COALESCE(NULLIF(`i`.`exchange_rate`, 0), 1) AS \"Giá trị hoá đơn\",\n       `i`.`balance` * COALESCE(NULLIF(`i`.`exchange_rate`, 0), 1) AS \"Còn phải thu\",\n       `i`.`exchange_rate` AS \"Tỷ giá\",\n       CASE `i`.`status_id` WHEN 2 THEN 'Đã gửi' WHEN 3 THEN 'Đã trả một phần'\n            ELSE CONCAT('status_id=', `i`.`status_id`) END AS \"Trạng thái\"\nFROM `invoices` AS `i`\nJOIN `clients` AS `c` ON `c`.`id` = `i`.`client_id`\nWHERE `i`.`is_deleted` = 0\n  AND `i`.`deleted_at` IS NULL\n  AND `i`.`status_id` IN (2, 3)\n  AND `i`.`is_proforma` = 0\n  AND `i`.`balance` > 0\nORDER BY (`i`.`due_date` IS NULL), DATEDIFF(CURDATE(), DATE(`i`.`due_date`)) DESC\nLIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "title": "Hoá đơn chưa thanh toán",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "`LEFT JOIN` chứ không `JOIN` sang `clients`: thanh toán có thể thuộc khách đã bị xoá mềm, và một dòng tiền biến mất khỏi bảng vì không join được là mất thông tin nghiêm trọng hơn một ô tên trống.\n\nLoại `status_id = 2` (Cancelled) nhưng **giữ** 1 = Pending, 3 = Failed, 5/6 = Refunded: bảng này dùng để đối soát với ngân hàng, nên cần thấy cả giao dịch hỏng và giao dịch đã hoàn tiền.\n\n`ORDER BY date DESC, id DESC` — `date` chỉ chính xác tới ngày, nếu không có `id` làm khoá phụ thì thứ tự trong cùng một ngày sẽ đảo lộn giữa hai lần tải.\n\n**Không join `paymentables`**: bảng đó là *polymorphic*, không có cột `invoice_id`. Cột `paymentable_type` chứa alias `'invoices'`, và các dòng cũ có thể chứa `'App\\Models\\Invoice'`. Muốn nối thanh toán với từng hoá đơn thì phải lọc `(paymentable_type = 'invoices' OR paymentable_type LIKE '%Invoice')` — dùng `LIKE` để khỏi phải thoát dấu backslash bên trong chuỗi JSON.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tiền nhận"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyVND"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Đã cấn trừ"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyVND"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Đã hoàn"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyVND"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ngày"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsLocal"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "id": 14,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT `p`.`number` AS \"Mã thanh toán\",\n       `p`.`date` AS \"Ngày\",\n       COALESCE(NULLIF(`c`.`name`, ''), CONCAT('Khách #', `c`.`id`)) AS \"Khách hàng\",\n       `p`.`amount` * COALESCE(NULLIF(`p`.`exchange_rate`, 0), 1) AS \"Tiền nhận\",\n       `p`.`applied` * COALESCE(NULLIF(`p`.`exchange_rate`, 0), 1) AS \"Đã cấn trừ\",\n       `p`.`refunded` AS \"Đã hoàn\",\n       CASE `p`.`status_id`\n         WHEN 1 THEN 'Chờ xử lý'\n         WHEN 2 THEN 'Đã huỷ'\n         WHEN 3 THEN 'Thất bại'\n         WHEN 4 THEN 'Hoàn tất'\n         WHEN 5 THEN 'Hoàn một phần'\n         WHEN 6 THEN 'Đã hoàn'\n         ELSE CONCAT('status_id=', `p`.`status_id`)\n       END AS \"Trạng thái\",\n       COALESCE(NULLIF(`p`.`transaction_reference`, ''), '') AS \"Mã giao dịch\"\nFROM `payments` AS `p`\nLEFT JOIN `clients` AS `c` ON `c`.`id` = `p`.`client_id`\nWHERE `p`.`is_deleted` = 0\n  AND `p`.`deleted_at` IS NULL\n  AND `p`.`status_id` <> 2\n  AND $__timeFilter(`p`.`date`)\nORDER BY `p`.`date` DESC, `p`.`id` DESC\nLIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "title": "Thanh toán gần đây",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 47
+      },
+      "id": 15,
+      "panels": [],
+      "title": "ĐỐI SOÁT SỐ LIỆU",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "mysql",
+        "uid": "invoiceninja_mysql"
+      },
+      "description": "Panel kiểm tra chính nó. `clients.balance` là cột **được app cập nhật dần** mỗi lần hoá đơn/thanh toán thay đổi; cột bên phải tính lại từ đầu. Sắp xếp theo **trị tuyệt đối của chênh lệch** để dòng lệch nhiều nhất nổi lên trên.\n\nChênh lệch khác 0 thường là do tiến trình ghi dở, hoặc do một hoá đơn bị xoá mềm mà `balance` chưa trừ lại.\n\n**Cả hai cột đều để nguyên tiền tệ của khách hàng, không quy đổi** — đây là chủ ý: so sánh chỉ có nghĩa khi hai vế cùng một đơn vị. Các panel khác quy đổi về tiền tệ công ty vì chúng cộng gộp nhiều khách; panel này so theo từng khách nên giữ nguyên mới đúng.\n\n`paid_to_date` và `credit_balance` giữ lại để phân biệt \"lệch vì ghi thiếu\" với \"khách đang có số dư tiền trả trước\".",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Số dư Ninja lưu"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyVND"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Tính lại từ hoá đơn"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyVND"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Chênh lệch"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyVND"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Đã trả luỹ kế"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyVND"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Số dư có"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "currencyVND"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "id": 16,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "mysql",
+            "uid": "invoiceninja_mysql"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT `c`.`id` AS \"Mã khách\",\n       COALESCE(NULLIF(`c`.`name`, ''), CONCAT('Khách #', `c`.`id`)) AS \"Khách hàng\",\n       `c`.`balance` AS \"Số dư Ninja lưu\",\n       COALESCE(`inv`.`tinh_lai`, 0) AS \"Tính lại từ hoá đơn\",\n       COALESCE(`inv`.`tinh_lai`, 0) - `c`.`balance` AS \"Chênh lệch\",\n       COALESCE(`inv`.`so_hoa_don`, 0) AS \"Số hoá đơn còn nợ\",\n       `c`.`paid_to_date` AS \"Đã trả luỹ kế\",\n       `c`.`credit_balance` AS \"Số dư có\"\nFROM `clients` AS `c`\nLEFT JOIN (\n    SELECT `i`.`client_id`,\n           SUM(`i`.`balance`) AS `tinh_lai`,\n           COUNT(*) AS `so_hoa_don`\n    FROM `invoices` AS `i`\n    WHERE `i`.`is_deleted` = 0\n  AND `i`.`deleted_at` IS NULL\n  AND `i`.`status_id` IN (2, 3)\n  AND `i`.`is_proforma` = 0\n  AND `i`.`balance` > 0\n    GROUP BY `i`.`client_id`\n) AS `inv` ON `inv`.`client_id` = `c`.`id`\nWHERE `c`.`is_deleted` = 0 AND `c`.`deleted_at` IS NULL\n  AND (`c`.`balance` <> 0 OR COALESCE(`inv`.`tinh_lai`, 0) <> 0)\nORDER BY ABS(COALESCE(`inv`.`tinh_lai`, 0) - `c`.`balance`) DESC, `c`.`id`\nLIMIT 200",
+          "refId": "A"
+        }
+      ],
+      "title": "Số dư khách hàng — Invoice Ninja lưu vs tính lại từ hoá đơn",
+      "type": "table"
+    }
+  ],
+  "preload": false,
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": [
+    "thermalbiz",
+    "invoiceninja",
+    "esco",
+    "billing"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Hướng B — Billing ESCO (Invoice Ninja v5)",
+  "uid": "esco-billing",
+  "version": 1,
+  "weekStart": "monday"
+}

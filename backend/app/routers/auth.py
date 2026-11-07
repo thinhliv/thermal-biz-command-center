@@ -43,10 +43,10 @@ def login(payload: LoginRequest, session: Session = Depends(get_session)) -> Log
     if user is None or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sai ten dang nhap hoac mat khau.",
+            detail="Sai tên đăng nhập hoặc mật khẩu.",
         )
     if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tai khoan da bi khoa.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tài khoản đã bị khóa.")
 
     token, expires_in = create_access_token(user)
     user.last_login_at = utcnow()

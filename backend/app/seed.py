@@ -57,9 +57,9 @@ EVN_PRICES = {
 }
 
 BAND_NAMES = {
-    TariffBandCode.PEAK: "Gio cao diem",
-    TariffBandCode.NORMAL: "Gio binh thuong",
-    TariffBandCode.OFF_PEAK: "Gio thap diem",
+    TariffBandCode.PEAK: "Giờ cao điểm",
+    TariffBandCode.NORMAL: "Giờ bình thường",
+    TariffBandCode.OFF_PEAK: "Giờ thấp điểm",
 }
 
 #: ISO weekday: thu 2..thu 7. Chu nhat khong co gio cao diem theo quy dinh EVN.
@@ -89,9 +89,9 @@ def _effective_from() -> date:
 # Nguoi dung
 # --------------------------------------------------------------------------- #
 DEMO_USERS = [
-    ("bgd", Role.BGD, "Nguyen Van Hung", "Tong Giam doc"),
-    ("vanhanh", Role.VANHANH, "Tran Thi Mai", "Truong ca Van hanh"),
-    ("ketoan", Role.KETOAN, "Le Quoc Bao", "Ke toan truong"),
+    ("bgd", Role.BGD, "Nguyễn Văn Hùng", "Tổng Giám đốc"),
+    ("vanhanh", Role.VANHANH, "Trần Thị Mai", "Trưởng ca Vận hành"),
+    ("ketoan", Role.KETOAN, "Lê Quốc Bảo", "Kế toán trưởng"),
 ]
 
 
@@ -144,9 +144,9 @@ def seed_tariff_bands(session: Session) -> int:
 EQUIPMENT_SPEC: list[dict] = [
     {
         "code": "KHO_DONG_01",
-        "name": "Kho Dong Sau Hai San 01 (-25C)",
+        "name": "Kho Đông Sâu Hải Sản 01 (-25°C)",
         "kind": EquipmentKind.DEEP_FREEZER,
-        "location": "Nha A - Khu che bien hai san",
+        "location": "Nhà A - Khu chế biến hải sản",
         "refrigerant": "R404A",
         "rated_power_kw": 45.0,
         "setpoint_c": -25.0,
@@ -155,9 +155,9 @@ EQUIPMENT_SPEC: list[dict] = [
     },
     {
         "code": "KHO_DONG_02",
-        "name": "Kho Dong Thue - Cong ty An Phat (-22C)",
+        "name": "Kho Đông Thuê - Công ty An Phát (-22°C)",
         "kind": EquipmentKind.DEEP_FREEZER,
-        "location": "Nha B - Khu cho thue",
+        "location": "Nhà B - Khu cho thuê",
         "refrigerant": "R404A",
         "rated_power_kw": 38.0,
         "setpoint_c": -22.0,
@@ -168,9 +168,9 @@ EQUIPMENT_SPEC: list[dict] = [
     },
     {
         "code": "KHO_MAT_01",
-        "name": "Kho Mat Nong San & Trai Cay (+2C)",
+        "name": "Kho Mát Nông Sản & Trái Cây (+2°C)",
         "kind": EquipmentKind.COLD_ROOM,
-        "location": "Nha C - Khu nong san",
+        "location": "Nhà C - Khu nông sản",
         "refrigerant": "R404A",
         "rated_power_kw": 18.0,
         "setpoint_c": 2.0,
@@ -181,9 +181,9 @@ EQUIPMENT_SPEC: list[dict] = [
     },
     {
         "code": "CAP_DONG_01",
-        "name": "Ham Cap Dong Gio Nhanh 01 (-35C)",
+        "name": "Hầm Cấp Đông Gió Nhanh 01 (-35°C)",
         "kind": EquipmentKind.BLAST_FREEZER,
-        "location": "Nha A - Day chuyen IQF",
+        "location": "Nhà A - Dây chuyền IQF",
         "refrigerant": "R404A",
         "rated_power_kw": 92.0,
         "setpoint_c": -35.0,
@@ -192,9 +192,9 @@ EQUIPMENT_SPEC: list[dict] = [
     },
     {
         "code": "CHILLER_01",
-        "name": "Tram Chiller Trung Tam (+7C)",
+        "name": "Trạm Chiller Trung Tâm (+7°C)",
         "kind": EquipmentKind.CHILLER,
-        "location": "San thuong - Nha van phong",
+        "location": "Sân thượng - Nhà văn phòng",
         "refrigerant": "R134a",
         "rated_power_kw": 75.0,
         "setpoint_c": 7.0,
@@ -202,9 +202,9 @@ EQUIPMENT_SPEC: list[dict] = [
     },
     {
         "code": "MAY_NEN_01",
-        "name": "Cum May Nen Truc Vit Trung Tam",
+        "name": "Cụm Máy Nén Trục Vít Trung Tâm",
         "kind": EquipmentKind.COMPRESSOR,
-        "location": "Phong may - Nha A",
+        "location": "Phòng máy - Nhà A",
         "refrigerant": "R404A",
         "rated_power_kw": 120.0,
         # Nhiet do bay hoi dich (-30C) cap cho cac kho -22/-25C; R404A o muc nay ~1.3-2.1 bar
@@ -213,17 +213,17 @@ EQUIPMENT_SPEC: list[dict] = [
     },
     {
         "code": "LO_HOI_01",
-        "name": "Lo Hoi Dot Tang Soi Sinh Khoi 01",
+        "name": "Lò Hơi Đốt Tầng Sôi Sinh Khối 01",
         "kind": EquipmentKind.BOILER,
-        "location": "Nha nang luong",
+        "location": "Nhà năng lượng",
         "rated_power_kw": 48.0,
         "design_efficiency_pct": 85.0,
     },
     {
         "code": "LO_HOI_02",
-        "name": "Lo Hoi Dot Than 02 (Hoi bao hoa)",
+        "name": "Lò Hơi Đốt Than 02 (Hơi bão hòa)",
         "kind": EquipmentKind.BOILER,
-        "location": "Nha nang luong",
+        "location": "Nhà năng lượng",
         "rated_power_kw": 52.0,
         "design_efficiency_pct": 82.0,
     },
@@ -260,8 +260,8 @@ RULE_SPEC: list[dict] = [
         "severity": Severity.CRITICAL,
         "is_haccp": True,
         "message_template": (
-            "HACCP - {equipment}: nhiet do {value:.1f}C vuot gioi han an toan "
-            "{threshold:.1f}C. Hai san co nguy co mat chat luong, kiem tra ngay."
+            "HACCP - {equipment}: nhiệt độ {value:.1f}°C vượt giới hạn an toàn "
+            "{threshold:.1f}°C. Hải sản có nguy cơ mất chất lượng, kiểm tra ngay."
         ),
     },
     {
@@ -273,7 +273,7 @@ RULE_SPEC: list[dict] = [
         "severity": Severity.CRITICAL,
         "is_haccp": True,
         "message_template": (
-            "HACCP - {equipment}: nhiet do {value:.1f}C vuot gioi han {threshold:.1f}C."
+            "HACCP - {equipment}: nhiệt độ {value:.1f}°C vượt giới hạn {threshold:.1f}°C."
         ),
     },
     {
@@ -284,8 +284,8 @@ RULE_SPEC: list[dict] = [
         "duration_minutes": 30,
         "severity": Severity.MAJOR,
         "message_template": (
-            "{equipment}: COP {value:.2f} thap hon {threshold:.2f} keo dai >30 phut. "
-            "Nghi thieu gas lanh hoac dan nong ban - kiem tra ap suat bay hoi va ve dan."
+            "{equipment}: COP {value:.2f} thấp hơn {threshold:.2f} kéo dài >30 phút. "
+            "Nghi thiếu gas lạnh hoặc dàn nóng bẩn - kiểm tra áp suất bay hơi và vệ dàn."
         ),
     },
     {
@@ -296,8 +296,8 @@ RULE_SPEC: list[dict] = [
         "duration_minutes": 15,
         "severity": Severity.WARNING,
         "message_template": (
-            "{equipment}: rung {value:.2f} mm/s vuot ranh gioi vung C/D ISO 10816-3 "
-            "({threshold:.1f} mm/s). Len lich can truc / kiem tra bac dan."
+            "{equipment}: rung {value:.2f} mm/s vượt ranh giới vùng C/D ISO 10816-3 "
+            "({threshold:.1f} mm/s). Lên lịch căn trục / kiểm tra bạc đạn."
         ),
     },
     {
@@ -308,8 +308,8 @@ RULE_SPEC: list[dict] = [
         "duration_minutes": 30,
         "severity": Severity.WARNING,
         "message_template": (
-            "{equipment}: hieu suat dot {value:.1f}% thap hon {threshold:.1f}%. "
-            "Kiem tra he so gio thua va muoi dan trong ong khoi."
+            "{equipment}: hiệu suất đốt {value:.1f}% thấp hơn {threshold:.1f}%. "
+            "Kiểm tra hệ số gió thừa và muội than trong ống khói."
         ),
     },
     {
@@ -320,8 +320,8 @@ RULE_SPEC: list[dict] = [
         "duration_minutes": 10,
         "severity": Severity.MAJOR,
         "message_template": (
-            "{equipment}: ap suat ngung tu {value:.2f} bar vuot {threshold:.1f} bar. "
-            "Kiem tra thap giai nhiet va luu luong nuoc lam mat."
+            "{equipment}: áp suất ngưng tụ {value:.2f} bar vượt {threshold:.1f} bar. "
+            "Kiểm tra tháp giải nhiệt và lưu lượng nước làm mát."
         ),
     },
 ]
@@ -494,8 +494,8 @@ def seed_alert_history(session: Session, users: list[User]) -> int:
             "CAP_DONG_01",
             2.61,
             2.8,
-            "Ham Cap Dong Gio Nhanh 01: COP 2.61 thap hon 2.80 keo dai >30 phut. "
-            "Da ve dan nong va nap bo sung 12 kg R404A, COP phuc hoi 3.02.",
+            "Hầm Cấp Đông Gió Nhanh 01: COP 2.61 thấp hơn 2.80 kéo dài >30 phút. "
+            "Đã vệ dàn nóng và nạp bổ sung 12 kg R404A, COP phục hồi 3.02.",
             False,
             52,
         ),
@@ -505,8 +505,8 @@ def seed_alert_history(session: Session, users: list[User]) -> int:
             "MAY_NEN_01",
             4.82,
             4.5,
-            "Cum May Nen Truc Vit: rung 4.82 mm/s vuot ranh gioi ISO 10816-3. "
-            "Da can truc va thay bac dan truc vit A.",
+            "Cụm Máy Nén Trục Vít: rung 4.82 mm/s vượt ranh giới ISO 10816-3. "
+            "Đã căn trục và thay bạc đạn trục vít A.",
             False,
             27,
         ),
@@ -516,8 +516,8 @@ def seed_alert_history(session: Session, users: list[User]) -> int:
             "KHO_DONG_02",
             -16.4,
             -18.0,
-            "HACCP - Kho Dong Thue An Phat: nhiet do -16.4C vuot gioi han -18.0C "
-            "trong 40 phut do cua kho mo. Da lap bien bao va dong cua, nhiet do ve -21.8C.",
+            "HACCP - Kho Đông Thuê An Phát: nhiệt độ -16.4°C vượt giới hạn -18.0°C "
+            "trong 40 phút do cửa kho mở. Đã lập biên bản và đóng cửa, nhiệt độ về -21.8°C.",
             True,
             9,
         ),
@@ -527,8 +527,8 @@ def seed_alert_history(session: Session, users: list[User]) -> int:
             "LO_HOI_01",
             73.8,
             75.0,
-            "Lo Hoi Sinh Khoi 01: hieu suat dot 73.8% thap hon 75.0%. "
-            "Da soot muoi ong khoi va chinh he so gio thua tu 1.45 ve 1.18.",
+            "Lò Hơi Sinh Khối 01: hiệu suất đốt 73.8% thấp hơn 75.0%. "
+            "Đã làm sạch muội ống khói và chỉnh hệ số gió thừa từ 1.45 về 1.18.",
             False,
             3,
         ),
@@ -569,9 +569,9 @@ def rng_duration(hours_ago: int) -> int:
 CUSTOMER_SPEC: list[dict] = [
     {
         "code": "KH-001",
-        "name": "Cong ty CP Thuy san Bien Dong",
+        "name": "Công ty CP Thủy sản Biển Đông",
         "tax_id": "0301234567",
-        "contact_name": "Pham Quoc Tuan",
+        "contact_name": "Phạm Quốc Tuấn",
         "contact_phone": "0903111222",
         "email": "ketoan@biendongseafood.vn",
         "credit_limit_vnd": 900_000_000,
@@ -579,9 +579,9 @@ CUSTOMER_SPEC: list[dict] = [
     },
     {
         "code": "KH-002",
-        "name": "Tap doan Nong nghiep Hoang Gia",
+        "name": "Tập đoàn Nông nghiệp Hoàng Gia",
         "tax_id": "0302345678",
-        "contact_name": "Do Thi Lan",
+        "contact_name": "Đỗ Thị Lan",
         "contact_phone": "0913777888",
         "email": "ap@hoanggiaagri.com",
         "credit_limit_vnd": 1_200_000_000,
@@ -589,9 +589,9 @@ CUSTOMER_SPEC: list[dict] = [
     },
     {
         "code": "KH-003",
-        "name": "Chuoi Cung Ung Lanh MegaCold",
+        "name": "Chuỗi Cung Ứng Lạnh MegaCold",
         "tax_id": "0303456789",
-        "contact_name": "Vu Minh Hoang",
+        "contact_name": "Vũ Minh Hoàng",
         "contact_phone": "0938444555",
         "email": "ops@megacold.vn",
         "credit_limit_vnd": 600_000_000,
@@ -599,9 +599,9 @@ CUSTOMER_SPEC: list[dict] = [
     },
     {
         "code": "KH-004",
-        "name": "Nha may Det May Tan Binh",
+        "name": "Nhà máy Dệt May Tân Bình",
         "tax_id": "0304567890",
-        "contact_name": "Hoang Van Sy",
+        "contact_name": "Hoàng Văn Sỹ",
         "contact_phone": "0902666777",
         "email": "kysu@tanbinhtex.vn",
         "credit_limit_vnd": 800_000_000,
@@ -609,9 +609,9 @@ CUSTOMER_SPEC: list[dict] = [
     },
     {
         "code": "KH-005",
-        "name": "Cong ty CP Che bien An Phat",
+        "name": "Công ty CP Chế biến Thực phẩm An Phát",
         "tax_id": "0305678901",
-        "contact_name": "Ngo Thi Hanh",
+        "contact_name": "Ngô Thị Hạnh",
         "contact_phone": "0917333444",
         "email": "hanh.ngo@anphatfood.vn",
         "credit_limit_vnd": 400_000_000,
@@ -619,9 +619,9 @@ CUSTOMER_SPEC: list[dict] = [
     },
     {
         "code": "KH-006",
-        "name": "Hop tac xa Rau Hoa Da Lat",
+        "name": "Hợp tác xã Rau Hoa Đà Lạt",
         "tax_id": "0306789012",
-        "contact_name": "Nguyen Van Dat",
+        "contact_name": "Nguyễn Văn Đạt",
         "contact_phone": "0946222333",
         "email": "datlat@htxraudalat.vn",
         "credit_limit_vnd": 250_000_000,
@@ -631,13 +631,13 @@ CUSTOMER_SPEC: list[dict] = [
 
 #: (customer_code, service_type, equipment_code, volume_tons, revenue, %cogs theo tung khoan)
 ORDER_TEMPLATE: list[tuple[str, str, str | None, float, int, dict]] = [
-    ("KH-001", "Cap dong nhanh hai san IQF", "CAP_DONG_01", 12.5, 125_000_000, {"d": 0.085, "r": 0.055, "l": 0.14, "m": 0.06, "o": 0.11}),
-    ("KH-001", "Bao quan kho dong -25C", "KHO_DONG_01", 48.0, 96_000_000, {"d": 0.11, "r": 0.04, "l": 0.12, "m": 0.05, "o": 0.13}),
-    ("KH-002", "Cho thue kho mat nong san", "KHO_MAT_01", 32.0, 85_000_000, {"d": 0.10, "r": 0.035, "l": 0.11, "m": 0.045, "o": 0.12}),
-    ("KH-003", "Bao quan kem & sua (+2C)", "KHO_MAT_01", 18.0, 54_000_000, {"d": 0.095, "r": 0.03, "l": 0.13, "m": 0.04, "o": 0.12}),
-    ("KH-004", "Cung cap hoi cong nghiep", "LO_HOI_01", None, 72_000_000, {"d": 0.02, "r": 0.0, "l": 0.09, "m": 0.07, "o": 0.10}),
-    ("KH-005", "Cho thue kho dong -22C", "KHO_DONG_02", 26.0, 115_000_000, {"d": 0.12, "r": 0.045, "l": 0.11, "m": 0.05, "o": 0.12}),
-    ("KH-006", "Bao quan rau hoa ngan han", "KHO_MAT_01", 9.5, 28_000_000, {"d": 0.10, "r": 0.03, "l": 0.14, "m": 0.04, "o": 0.13}),
+    ("KH-001", "Cấp đông nhanh hải sản IQF", "CAP_DONG_01", 12.5, 125_000_000, {"d": 0.085, "r": 0.055, "l": 0.14, "m": 0.06, "o": 0.11}),
+    ("KH-001", "Bảo quản kho đông -25°C", "KHO_DONG_01", 48.0, 96_000_000, {"d": 0.11, "r": 0.04, "l": 0.12, "m": 0.05, "o": 0.13}),
+    ("KH-002", "Cho thuê kho mát nông sản", "KHO_MAT_01", 32.0, 85_000_000, {"d": 0.10, "r": 0.035, "l": 0.11, "m": 0.045, "o": 0.12}),
+    ("KH-003", "Bảo quản kem & sữa (+2°C)", "KHO_MAT_01", 18.0, 54_000_000, {"d": 0.095, "r": 0.03, "l": 0.13, "m": 0.04, "o": 0.12}),
+    ("KH-004", "Cung cấp hơi công nghiệp", "LO_HOI_01", None, 72_000_000, {"d": 0.02, "r": 0.0, "l": 0.09, "m": 0.07, "o": 0.10}),
+    ("KH-005", "Cho thuê kho đông -22°C", "KHO_DONG_02", 26.0, 115_000_000, {"d": 0.12, "r": 0.045, "l": 0.11, "m": 0.05, "o": 0.12}),
+    ("KH-006", "Bảo quản rau hoa ngắn hạn", "KHO_MAT_01", 9.5, 28_000_000, {"d": 0.10, "r": 0.03, "l": 0.14, "m": 0.04, "o": 0.13}),
 ]
 
 

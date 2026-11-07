@@ -25,11 +25,11 @@ from ..timeutil import day_bounds, month_bounds, utcnow
 
 #: Cac thang tuoi no theo thong le ke toan Viet Nam
 AGING_BRACKETS: list[tuple[str, int | None, int | None]] = [
-    ("Trong han", None, 0),
-    ("1-30 ngay", 1, 30),
-    ("31-60 ngay", 31, 60),
-    ("61-90 ngay", 61, 90),
-    ("Tren 90 ngay", 91, None),
+    ("Trong hạn", None, 0),
+    ("1-30 ngày", 1, 30),
+    ("31-60 ngày", 31, 60),
+    ("61-90 ngày", 61, 90),
+    ("Trên 90 ngày", 91, None),
 ]
 
 

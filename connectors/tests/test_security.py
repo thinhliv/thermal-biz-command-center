@@ -123,6 +123,36 @@ def test_a_accepts_valid_api_key():
     assert response.json()["status"] == "simulated"
 
 
+def test_a_creates_maintenance_request_and_r404a_hold():
+    with TestClient(connector_a().app) as client:
+        response = client.post(
+            "/webhook/thingsboard-alarm", json={**ALARM, "alarm_id": "unique-alarm-123"}, headers=auth_headers()
+        )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "simulated"
+    maint = data["maintenance_request"]
+    assert maint["doctype"] == "Maintenance Request"
+    assert maint["asset"] == "KHO_DONG_01"
+    stock = data["stock_reservation"]
+    assert stock is not None
+    assert stock["item_code"] == "R404A-GAS-CYLINDER"
+    assert stock["reserved_qty"] == 2.0
+
+
+def test_a_cooldown_suppresses_duplicate_alarm():
+    mod = connector_a()
+    with TestClient(mod.app) as client:
+        res1 = client.post(
+            "/webhook/thingsboard-alarm", json={**ALARM, "alarm_id": "dup-alarm-999"}, headers=auth_headers()
+        )
+        assert res1.json()["status"] == "simulated"
+        res2 = client.post(
+            "/webhook/thingsboard-alarm", json={**ALARM, "alarm_id": "dup-alarm-999"}, headers=auth_headers()
+        )
+        assert res2.json()["status"] == "cooldown_suppressed"
+
+
 def test_a_rejects_unknown_severity():
     with TestClient(connector_a().app) as client:
         response = client.post(

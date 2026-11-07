@@ -8,6 +8,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "electron:start": "electron .",
     "electron:build": "npm run build && electron-builder",
     "electron:build:win": "npm run build && electron-builder --win",
@@ -21,6 +25,8 @@
     "lucide-react": "^0.359.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-router-dom": "^6.30.6",
+    "recharts": "^2.15.4",
     "tailwind-merge": "^2.2.1"
   },
   "devDependencies": {
@@ -28,16 +34,22 @@
     "@capacitor/cli": "^5.7.0",
     "@capacitor/core": "^5.7.0",
     "@capacitor/ios": "^5.7.0",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",
+    "@vitest/coverage-v8": "^2.1.9",
     "autoprefixer": "^10.4.19",
     "electron": "^29.1.5",
     "electron-builder": "^24.13.3",
+    "jsdom": "^25.0.1",
     "postcss": "^8.4.38",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.2.2",
-    "vite": "^5.1.6"
+    "vite": "^5.1.6",
+    "vitest": "^2.1.9"
   },
   "build": {
     "appId": "com.thinhliv.thermalbiz",

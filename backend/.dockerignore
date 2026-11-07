@@ -1,0 +1,14 @@
+# thermal_biz.db la DB dev that (co hash mat khau demo) - khong duoc lot vao build context.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite3
+
+tests/
+.pytest_cache/
+__pycache__/
+*.pyc
+.env
+.env.*
+requirements-dev.txt

@@ -1,0 +1,14 @@
+# Repo nay duoc dev tren Windows (core.autocrlf=true) nhung chay trong container Linux.
+# Script .sh ma bi doi sang CRLF thi kernel bao `/bin/sh^M: bad interpreter` -> container chet ngay.
+*.sh text eol=lf
+
+# PowerShell la entry point Windows, giu CRLF cho nhat quan
+*.ps1 text eol=crlf
+
+# File nhi phan: khong de git tu doi line ending
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
+*.jar binary
+*.keystore binary

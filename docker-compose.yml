@@ -1,4 +1,12 @@
-version: '3.8'
+# STACK CHO APP TU VIET (FastAPI + Postgres + Grafana)
+# OSS platforms (ThingsBoard/ERPNext/HA/Invoice Ninja) nam o docker/ va dong vai tro nguon du lieu.
+#
+# Khoi chay bang:
+#   docker compose --env-file .env up -d
+#
+# .env la BAT BUOC: secret va port deu khai bao dang "required" (dau hai cham trong
+# ngoac nhon) de fail ngay luc parse, thay vi am tham chay voi gia tri rong
+# hoac voi port trung voi cac stack trong thu muc docker/.
 
 services:
   db:
@@ -6,14 +14,20 @@ services:
     container_name: thermal_db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: thermal_biz_db
-      POSTGRES_USER: thermal_admin
-      POSTGRES_PASSWORD: thermal_secure_pass_2026
+      POSTGRES_DB: ${POSTGRES_DB:-thermal_biz_db}
+      POSTGRES_USER: ${POSTGRES_USER:-thermal_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # Schema do Alembic tao (container api chay `alembic upgrade head`), khong mount raw SQL o day.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-thermal_admin} -d ${POSTGRES_DB:-thermal_biz_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
 
   api:
     build:
@@ -22,27 +36,51 @@ services:
     container_name: thermal_api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://thermal_admin:thermal_secure_pass_2026@db:5432/thermal_biz_db
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-thermal_admin}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@db:5432/${POSTGRES_DB:-thermal_biz_db}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set in .env}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-480}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS must be set in .env (khong dung '*')}
+      # Khoa /api/ingest/*. Thieu bien nay => backend tu choi moi connector (503), du la co y.
+      CONNECTOR_API_KEY: ${CONNECTOR_API_KEY:?CONNECTOR_API_KEY must be set in .env}
+      # Don gia dich vu (VND/kWh) nam o server. Nguoi goi API khong tu khai duoc.
+      SERVICE_RATE_PER_KWH: ${SERVICE_RATE_PER_KWH:-3500}
+      TELEMETRY_WS_INTERVAL_SECONDS: ${TELEMETRY_WS_INTERVAL_SECONDS:-3}
+      # Mac dinh false: stack nay dung Postgres tuc la moi truong that, khong duoc
+      # tu sinh tai khoan demo. Chi bat khi demo va PHAI dat SEED_DEMO_PASSWORD.
+      AUTO_SEED: ${AUTO_SEED:-false}
+      SEED_DEMO_PASSWORD: ${SEED_DEMO_PASSWORD:-}
     ports:
-      - "8000:8000"
+      - "${API_PORT:?API_PORT must be set in .env}:8080"
     depends_on:
-      - db
+      # Khong co dieu kien nay thi api chay alembic truoc khi Postgres nhan ket noi -> chet.
+      db:
+        condition: service_healthy
 
   grafana:
     image: grafana/grafana:latest
     container_name: thermal_grafana
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:?GRAFANA_PORT must be set in .env}:3000"
     environment:
-      - GF_SECURITY_ALLOW_EMBEDDING=true
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
-      - GF_USERS_DEFAULT_THEME=dark
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
+      GF_SECURITY_ALLOW_EMBEDDING: ${GRAFANA_ALLOW_EMBEDDING:-false}
+      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-false}
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_DEFAULT_THEME: dark
+      # datasources.yaml noi suy cac bien nay (Grafana ho tro $ENV_VAR trong provisioning)
+      POSTGRES_DB: ${POSTGRES_DB:-thermal_biz_db}
+      POSTGRES_USER: ${POSTGRES_USER:-thermal_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
 volumes:
   pg_data:

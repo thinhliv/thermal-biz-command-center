@@ -1,167 +1,205 @@
-"""
-Executive Command Center - FastAPI Backend
-Thermal Engineering x Business Administration
+"""Executive Command Center - FastAPI backend.
+
+Thermal Engineering x Business Administration.
+
+Khong con du lieu mock: moi con so deu doc tu DB (SQLite khi dev, Postgres khi prod).
+Doi `DATABASE_URL` trong `.env` la doi backend, khong sua code.
 """
 
-import os
+from __future__ import annotations
+
 import asyncio
-from datetime import date
-from typing import List, Dict, Any
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+import logging
+from contextlib import asynccontextmanager
+
+import jwt
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from .config import get_settings
+from .database import SessionLocal, create_all, dispose
+from .models import Role, User
+from .routers import alerts, auth, business, dashboard, debts, ingest, thermal
+from .security import scopes_for
+from .seed import seed_if_empty
+from .services import billing, thermal as thermal_service
+from .timeutil import day_bounds, utcnow
+
+logger = logging.getLogger("command-center")
+
+settings = get_settings()
+
+
+def _bootstrap() -> dict:
+    """Chuan bi DB luc khoi dong. Tra ve thong ke de log.
+
+    SQLite (dev/test): tu tao bang de chay duoc ma khong can cai dat gi.
+    Postgres (prod): schema do Alembic quan ly, entrypoint da chay `alembic upgrade head`.
+    Goi `create_all()` o prod se tao bang ma khong stamp alembic_version -> lan
+    migrate sau chay lai migration dau va fail vi bang da ton tai.
+    """
+    if settings.is_sqlite:
+        create_all()
+    session: Session = SessionLocal()
+    try:
+        if settings.auto_seed:
+            return seed_if_empty(session)
+        return {"seeded": False, "reason": "AUTO_SEED=false"}
+    finally:
+        session.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info(
+        "Backend %s - schema quan ly boi %s",
+        "sqlite" if settings.is_sqlite else "postgres",
+        "create_all() khi khoi dong" if settings.is_sqlite else "Alembic (entrypoint)",
+    )
+    stats = _bootstrap()
+    if stats.get("seeded"):
+        logger.info("Da seed du lieu khoi tao: %s", {k: v for k, v in stats.items() if k != "seeded"})
+    else:
+        logger.info("Bo qua seed: %s", stats.get("reason"))
+    yield
+    dispose()
+
 
 app = FastAPI(
     title="Thermal & Business Command Center API",
-    description="Real-time Executive Dashboard API combining Thermal Engineering & Business Management",
-    version="1.0.0"
+    description=(
+        "API thoi gian thuc ket hop ky thuat nhiet lanh va quan tri kinh doanh. "
+        "Xac thuc JWT, phan quyen 3 vai (BGD / VANHANH / KETOAN). "
+        "Endpoint /api/ingest/* danh cho connector, khoa bang X-Connector-Api-Key."
+    ),
+    version=settings.version,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    # Khong dung "*" vi allow_credentials=True: trinh duyet se chan va lo luon du lieu.
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Connector-Api-Key"],
 )
 
-# Mock in-memory state with realistic engineering & business metrics
-MOCK_THERMAL_DATA = [
-    {
-        "equipment_code": "KHO_DONG_01",
-        "equipment_name": "Kho Đông Sâu Hải Sản 01 (-25°C)",
-        "temperature_c": -23.8,
-        "pressure_bar": 1.85,
-        "power_kw": 42.5,
-        "cop_efficiency": 3.85,
-        "status": "RUNNING"
-    },
-    {
-        "equipment_code": "KHO_MAT_02",
-        "equipment_name": "Kho Mát Nông Sản & Trái Cây 02 (+2°C)",
-        "temperature_c": 3.2,
-        "pressure_bar": 3.40,
-        "power_kw": 16.2,
-        "cop_efficiency": 4.20,
-        "status": "RUNNING"
-    },
-    {
-        "equipment_code": "CHILLER_01",
-        "equipment_name": "Trạm Chiller Trung Tâm Tòa Nhà",
-        "temperature_c": 6.8,
-        "pressure_bar": 4.10,
-        "power_kw": 68.0,
-        "cop_efficiency": 4.60,
-        "status": "RUNNING"
-    },
-    {
-        "equipment_code": "LO_HOI_01",
-        "equipment_name": "Lò Hơi Đốt Tầng Sôi 01 (Hơi Nóng)",
-        "temperature_c": 178.5,
-        "pressure_bar": 9.20,
-        "power_kw": 110.0,
-        "cop_efficiency": 0.89,
-        "status": "RUNNING"
-    },
-    {
-        "equipment_code": "KHO_CAP_DONG_03",
-        "equipment_name": "Hầm Cấp Đông Gió Nhanh 03",
-        "temperature_c": -32.1,
-        "pressure_bar": 1.45,
-        "power_kw": 88.0,
-        "cop_efficiency": 3.20,
-        "status": "WARNING"
-    }
-]
+for module in (auth.router, dashboard.router, thermal.router, business.router, debts.router, alerts.router, ingest.router):
+    app.include_router(module)
 
-MOCK_BUSINESS_DATA = {
-    "today_revenue": 145200000,
-    "mtd_revenue": 3480000000,
-    "target_revenue": 4000000000,
-    "electricity_cost_today": 38500000,
-    "gross_margin_pct": 73.48,
-    "total_volume_tons": 515.0,
-    "recent_orders": [
-        {"order_code": "ORD-101", "customer": "Công ty Thủy sản Biển Đông", "amount": 125000000, "service": "Cấp đông nhanh hải sản", "margin": 75.0},
-        {"order_code": "ORD-102", "customer": "Tập đoàn Nông nghiệp Hoàng Gia", "amount": 85000000, "service": "Cho thuê kho lạnh nông sản", "margin": 79.0},
-        {"order_code": "ORD-103", "customer": "Chuỗi Cung Ứng Lạnh MegaCold", "amount": 54000000, "service": "Bảo quản kem & sữa", "margin": 76.0},
-        {"order_code": "ORD-104", "customer": "Nhà máy Dệt May Tân Bình", "amount": 72000000, "service": "Cung cấp hơi công nghiệp", "margin": 60.0}
-    ]
-}
 
-MOCK_DEBT_DATA = {
-    "total_receivables": 317000000,
-    "overdue_debt": 242000000,
-    "aging_breakdown": [
-        {"bracket": "Trong hạn", "amount": 75000000, "color": "#10B981"},
-        {"bracket": "1-30 ngày", "amount": 85000000, "color": "#F59E0B"},
-        {"bracket": "31-60 ngày", "amount": 115000000, "color": "#EF4444"},
-        {"bracket": ">60 ngày", "amount": 42000000, "color": "#991B1B"}
-    ],
-    "top_debtors": [
-        {"customer": "Công ty Chế biến An Phát", "overdue_days": 48, "amount": 115000000, "status": "CRITICAL"},
-        {"customer": "Tập đoàn Nông nghiệp Hoàng Gia", "overdue_days": 18, "amount": 85000000, "status": "WARNING"},
-        {"customer": "Hợp tác xã Rau Đà Lạt", "overdue_days": 75, "amount": 42000000, "status": "DANGER"}
-    ]
-}
+@app.get("/api/health", tags=["system"])
+def health_check() -> dict:
+    """Khong xac thuc - dung cho Docker/K8s healthcheck."""
+    session: Session = SessionLocal()
+    try:
+        error = None
+        try:
+            session.connection()
+        except Exception as exc:  # pragma: no cover - chi xay ra khi DB chet
+            error = str(exc)
+    finally:
+        session.close()
 
-MOCK_ALERTS = [
-    {"id": 1, "severity": "WARNING", "text": "Hầm Cấp Đông 03: Nhiệt độ tiệm cận ngưỡng -32.1°C, cần kiểm tra quạt gió dàn lạnh.", "time": "13:50"},
-    {"id": 2, "severity": "CRITICAL", "text": "Cảnh báo nợ quá hạn: Khách hàng An Phát quá hạn 48 ngày (115 triệu VNĐ).", "time": "12:15"},
-    {"id": 3, "severity": "INFO", "text": "Đã tự động chuyển đổi công suất Chiller sang khung giờ Thấp điểm (tiết kiệm 35% tiền điện).", "time": "11:00"}
-]
-
-@app.get("/api/health")
-def health_check():
-    return {"status": "ok", "system": "Thermal & Business Command Center", "version": "1.0.0"}
-
-@app.get("/api/dashboard-summary")
-def get_dashboard_summary():
-    # Calculate thermal stats
-    total_power = sum(item["power_kw"] for item in MOCK_THERMAL_DATA)
-    avg_cop = round(sum(item["cop_efficiency"] for item in MOCK_THERMAL_DATA) / len(MOCK_THERMAL_DATA), 2)
-    equipment_running = sum(1 for item in MOCK_THERMAL_DATA if item["status"] == "RUNNING")
-    equipment_warning = sum(1 for item in MOCK_THERMAL_DATA if item["status"] == "WARNING")
-    
     return {
-        "business": MOCK_BUSINESS_DATA,
-        "debts": MOCK_DEBT_DATA,
-        "thermal_summary": {
-            "total_power_kw": total_power,
-            "avg_cop": avg_cop,
-            "total_units": len(MOCK_THERMAL_DATA),
-            "running": equipment_running,
-            "warning": equipment_warning,
-            "telemetry": MOCK_THERMAL_DATA
-        },
-        "alerts": MOCK_ALERTS
+        "status": "ok" if error is None else "degraded",
+        "database": "ok" if error is None else f"error: {error}",
+        "system": settings.app_name,
+        "version": settings.version,
+        "backend": "sqlite" if settings.is_sqlite else "postgres",
     }
 
-@app.get("/api/thermal")
-def get_thermal_telemetry():
-    return MOCK_THERMAL_DATA
 
-@app.get("/api/business")
-def get_business_data():
-    return MOCK_BUSINESS_DATA
+@app.get("/api/system/config", tags=["system"])
+def public_config() -> dict:
+    """Cau hinh frontend can de ve UI. KHONG tra ve secret."""
+    return {
+        "app_name": settings.app_name,
+        "version": settings.version,
+        "roles": [role.value for role in Role],
+        "scopes": {role.value: scopes_for(role.value) for role in Role},
+        "ws_interval_seconds": settings.telemetry_ws_interval_seconds,
+        "vibration_limit_mm_s": thermal_service.VIBRATION_ISO10816_LIMIT_MM_S,
+        "haccp_seafood_limit_c": thermal_service.HACCP_SEAFOOD_LIMIT_C,
+    }
 
-@app.get("/api/debts")
-def get_debts_data():
-    return MOCK_DEBT_DATA
 
-@app.get("/api/alerts")
-def get_alerts():
-    return MOCK_ALERTS
-
-# WebSocket for live real-time simulation updates
+# --------------------------------------------------------------------------- #
+# WebSocket telemetry
+# --------------------------------------------------------------------------- #
 @app.websocket("/ws/telemetry")
-async def websocket_telemetry(websocket: WebSocket):
+async def websocket_telemetry(websocket: WebSocket) -> None:
+    """Day ban nhe (Nhiet + canh bao) theo chu ky.
+
+    WebSocket cua trinh duyet khong gui duoc header Authorization nen token
+    truyen qua query string `?token=`. Van phai xac thuc: khong de stream mo.
+    """
+    token = websocket.query_params.get("token", "")
+    user = _authenticate_ws(token)
+    if user is None:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    scopes = set(scopes_for(user.role))
+    if not (scopes & {"thermal", "alerts"}):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     await websocket.accept()
+    interval = max(1.0, settings.telemetry_ws_interval_seconds)
     try:
         while True:
-            await asyncio.sleep(3)
-            # Send latest summary
-            data = get_dashboard_summary()
-            await websocket.send_json(data)
+            payload = _ws_snapshot(scopes)
+            await websocket.send_json(payload)
+            await asyncio.sleep(interval)
     except WebSocketDisconnect:
-        pass
+        return
+    except RuntimeError:
+        # Socket da bi dong tu phia client
+        return
+
+
+def _authenticate_ws(token: str) -> User | None:
+    """Xac thuc token cho WebSocket. Tra ve None neu sai/het han/vai tro da doi."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+            options={"require": ["exp", "sub"]},
+        )
+        user_id = int(payload["sub"])
+    except (jwt.InvalidTokenError, KeyError, TypeError, ValueError):
+        return None
+
+    session: Session = SessionLocal()
+    try:
+        user = session.get(User, user_id)
+        if user is None:
+            return None
+        # Doc het thuoc tinh can dung TRUOC khi dong session
+        return user if (user.is_active and user.role == payload.get("role")) else None
+    finally:
+        session.close()
+
+
+def _ws_snapshot(scopes: set[str]) -> dict:
+    session: Session = SessionLocal()
+    try:
+        summary = thermal_service.summarize_thermal(session)
+        payload: dict = {}
+        if "thermal" in scopes:
+            payload["thermal_summary"] = summary
+        if "alerts" in scopes:
+            payload["alerts"] = summary["alerts"]
+        if "business" in scopes:
+            # Chi tinh them khi vai tro duoc xem, tranh tinh thua cho van hanh
+            today_start, today_end = day_bounds(utcnow())
+            payload["energy"] = billing.energy_cost_report(session, today_start, today_end)
+        return payload
+    finally:
+        session.close()

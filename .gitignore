@@ -2,9 +2,23 @@ node_modules/
 dist/
 release/
 .env
+.env.local
+.env.*.local
 __pycache__/
 *.pyc
+.pytest_cache/
+.venv/
+venv/
 pg_data/
 grafana_data/
+*.db
+*.sqlite3
+# database.py bat PRAGMA journal_mode=WAL nen SQLite sinh ra cac file sidecar nay.
+# Chung chua du lieu that (hash mat khau, so lieu kinh doanh) y nhu file .db chinh.
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite3-wal
+*.sqlite3-shm
 .DS_Store
 *.log

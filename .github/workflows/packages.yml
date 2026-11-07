@@ -1,0 +1,139 @@
+name: Packages
+
+# Dong goi da nen tang. Co y KHONG chay moi lan push len main: moi lan build Electron
+# keo dai hang chuc phut va sinh ra ~250 MB, trong khi code da duoc vong CI kiem tra roi.
+# Chay khi dan tag phat hanh, hoac bam nut "Run workflow" de lay ban dung thu.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: >-
+          VITE_API_URL nung vao ban dong goi (vi du https://api.congty.com). De trong thi
+          ban desktop noi localhost:8080 va ban Android noi 10.0.2.2:8080 (emulator).
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: '20'
+  VITE_API_URL: ${{ inputs.api_url || '' }}
+
+jobs:
+  desktop:
+    name: Desktop (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows
+            args: --win
+            artifact: desktop-windows
+          - os: ubuntu-latest
+            label: linux
+            args: --linux
+            artifact: desktop-linux
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build web bundle
+        run: npm run build
+
+      # --publish never: khong co secret signing/token o day, va ta chi muon artifact.
+      - name: electron-builder
+        run: npx electron-builder ${{ matrix.args }} --x64 --publish never
+
+      - name: Report package contents
+        run: |
+          echo "--- release/ ---"
+          ls -lh release/ || true
+          echo "--- app.asar ---"
+          ls -lh release/*-unpacked/resources/app.asar || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            frontend/release/*.exe
+            frontend/release/*.AppImage
+            frontend/release/*.deb
+            frontend/release/*.blockmap
+            frontend/release/latest*.yml
+          if-no-files-found: error
+          retention-days: 30
+
+  android:
+    name: Android (APK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Capacitor 5 dung Android Gradle Plugin 8.x -> bat buoc JDK 17.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: frontend/android/**/build.gradle
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      # Khong fail de con lay duoc APK dung thu, nhung phai noi ro: WebView Android chay o
+      # https://localhost nen ban release goi http:// se bi chan la mixed content.
+      - name: Warn if API URL is not HTTPS
+        if: env.VITE_API_URL == '' || startsWith(env.VITE_API_URL, 'http://')
+        run: |
+          echo "::warning title=Android API URL::VITE_API_URL='${VITE_API_URL}' khong phai https://. APK nay chi noi duoc backend khi chay emulator (10.0.2.2) va bat android.allowMixedContent. Muon phat hanh that, chay lai workflow voi api_url=https://..."
+
+      - name: Build web bundle
+        working-directory: frontend
+        run: npm run build
+
+      # android/ da duoc commit (khuyen nghi cua Capacitor) nen chi can sync, khong `cap add`.
+      - name: Sync Capacitor
+        working-directory: frontend
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: frontend/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: frontend/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30

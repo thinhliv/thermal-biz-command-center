@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Phai trung mau navy cua artwork: khac mau se lo vien sang quanh icon khi launcher cat mask. -->
+    <color name="ic_launcher_background">#0B0F19</color>
+</resources>

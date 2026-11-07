@@ -2,13 +2,25 @@
 <html lang="vi" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- Không khoá user-scalable: người vận hành đọc số trên điện thoại cần pinch-zoom,
+         và TV kiosk thì không có thao tác chạm nào để mà lo. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Executive Command Center - Thermal & Business</title>
-    <!-- App Icons and PWA Meta -->
+    <meta
+      name="description"
+      content="Trung tâm điều hành kép: nhiệt lạnh công nghiệp (HACCP, COP, ISO 10816-3) và kinh doanh (giá điện EVN TOU, công nợ, biên lợi nhuận)."
+    />
+    <!-- Đường dẫn tương đối vì vite.config đặt base './': Electron nạp từ file:// và
+         Capacitor từ capacitor:// nên mọi URL tuyệt đối kiểu /manifest.webmanifest sẽ 404. -->
+    <link rel="manifest" href="./manifest.webmanifest" />
     <meta name="theme-color" content="#0b0f19" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2306b6d4'><path d='M12 2v20M2 12h20'/></svg>" />
+    <meta name="apple-mobile-web-app-title" content="ThermalBiz" />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./icons/apple-touch-icon.png" />
   </head>
   <body class="bg-[#0b0f19] text-slate-100 overflow-x-hidden font-sans antialiased">
     <div id="root"></div>

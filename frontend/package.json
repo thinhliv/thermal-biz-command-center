@@ -3,6 +3,14 @@
   "private": true,
   "version": "1.0.0",
   "description": "Cross-Platform Executive Command Center: Thermal Engineering x Business Management",
+  "author": {
+    "name": "thinhliv",
+    "email": "thinhliv@users.noreply.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thinhliv/thermal-biz-command-center.git"
+  },
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -13,6 +21,7 @@
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
     "electron:start": "electron .",
+    "electron:pack": "npm run build && electron-builder --dir",
     "electron:build": "npm run build && electron-builder",
     "electron:build:win": "npm run build && electron-builder --win",
     "electron:build:linux": "npm run build && electron-builder --linux",
@@ -20,15 +29,8 @@
     "cap:android": "npm run build && cap open android",
     "cap:ios": "npm run build && cap open ios"
   },
-  "dependencies": {
-    "clsx": "^2.1.0",
-    "lucide-react": "^0.359.0",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.30.6",
-    "recharts": "^2.15.4",
-    "tailwind-merge": "^2.2.1"
-  },
+  "//": "dependencies rỗng có chủ đích. Electron-builder luôn đóng node_modules của dependencies vào app.asar, trong khi mọi thư viện UI đã được Vite bundle vào dist/ và electron/main.js chỉ require 'electron' + 'path'. Chuyển chúng xuống devDependencies là thứ giữ asar ở ~2 MB thay vì ~25 MB — đừng 'sửa' lại.",
+  "dependencies": {},
   "devDependencies": {
     "@capacitor/android": "^5.7.0",
     "@capacitor/cli": "^5.7.0",
@@ -42,10 +44,17 @@
     "@vitejs/plugin-react": "^4.2.1",
     "@vitest/coverage-v8": "^2.1.9",
     "autoprefixer": "^10.4.19",
+    "clsx": "^2.1.0",
     "electron": "^29.1.5",
     "electron-builder": "^24.13.3",
     "jsdom": "^25.0.1",
+    "lucide-react": "^0.359.0",
     "postcss": "^8.4.38",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.30.6",
+    "recharts": "^2.15.4",
+    "tailwind-merge": "^2.2.1",
     "tailwindcss": "^3.4.1",
     "typescript": "^5.2.2",
     "vite": "^5.1.6",
@@ -54,8 +63,10 @@
   "build": {
     "appId": "com.thinhliv.thermalbiz",
     "productName": "Thermal & Biz Command Center",
+    "executableName": "ThermalBiz",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "build"
     },
     "files": [
       "dist/**/*",
@@ -63,17 +74,56 @@
     ],
     "win": {
       "target": [
-        "nsis",
-        "portable"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "icon": "public/icon.png"
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Thermal & Biz Command Center",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "ThermalBiz-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "ThermalBiz-Portable-${version}.${ext}"
     },
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
-      "category": "Office"
+      "icon": "build/icon.png",
+      "category": "Office",
+      "synopsis": "Trung tâm điều hành Nhiệt × Kinh doanh",
+      "artifactName": "ThermalBiz-${version}.${ext}"
     }
   }
 }

@@ -5,6 +5,14 @@
 # PowerShell la entry point Windows, giu CRLF cho nhat quan
 *.ps1 text eol=crlf
 
+# Batch cua cmd.exe: parser cua cmd doc theo CRLF, file LF-only co lam `goto :label` nhay sai.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Gradle wrapper la shell script nhung KHONG co duoi .sh. Thieu dong nay thi
+# core.autocrlf=true se doi no sang CRLF va Git-Bash/WSL bao `/bin/sh^M: bad interpreter`.
+gradlew text eol=lf
+
 # File nhi phan: khong de git tu doi line ending
 *.png binary
 *.jpg binary

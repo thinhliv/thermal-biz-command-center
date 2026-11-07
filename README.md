@@ -1,107 +1,184 @@
-# ❄️🔥 THERMAL & BUSINESS EXECUTIVE COMMAND CENTER
-### Hệ Thống Điều Hành Doanh Nghiệp Liên Ngành: Quản Trị Kinh Doanh &times; Công Nghệ Kỹ Thuật Nhiệt
+# ❄️⚡ THERMAL & BUSINESS EXECUTIVE COMMAND CENTER
+### Hệ Thống Điều Hành Doanh Nghiệp Liên Ngành: Quản Trị Kinh Doanh × Kỹ Thuật Nhiệt
 
-Dự án tích hợp và tối ưu hóa năng lực của **7 nền tảng mã nguồn mở hàng đầu thế giới** thành hai bộ giải pháp kiến trúc hoàn chỉnh, phục vụ cho các doanh nghiệp hoạt động trong lĩnh vực **Kỹ thuật Nhiệt - Lạnh** (Kho lạnh bảo quản, Trạm Chiller điều hòa trung tâm, Lò hơi công nghiệp, Cho thuê kho và Dịch vụ năng lượng ESCO).
+ThermalBiz Command Center là nền tảng điều hành thống nhất kết nối giữa **Hệ thống Nhiệt Lạnh Công Nghiệp** (Kho đông sâu, hầm cấp đông, Chiller, lò hơi) và **Hoạt động Kinh doanh & Tài chính** (Doanh thu, COGS toàn diện, biểu giá EVN 3 khung giờ, quản trị công nợ và cảnh báo an toàn thực phẩm HACCP).
 
 ---
 
-## 📌 BẢN ĐỒ KHAI THÁC 7 NỀN TẢNG MÃ NGUỒN MỞ
+## 🏛️ KIẾN TRÚC TỔNG THỂ HỆ THỐNG
 
-| Nền tảng | Kho mã nguồn GitHub | Tầng kiến trúc | Vai trò chính xác trong hệ thống |
+ThermalBiz triển khai theo kiến trúc **Trung tâm Điều phối Thống nhất (Core Platform)** kết hợp cùng hai hướng tích hợp mở rộng nguồn mở:
+
+```mermaid
+flowchart TD
+    subgraph Core["TRUNG TÂM ĐIỀU HÀNH THỐNG NHẤT (Core Platform)"]
+        UI["React 18 SPA / Vite / Tailwind CSS / Recharts\n(Web, Android Capacitor, Desktop Kiosk, PWA)"]
+        API["FastAPI Backend (Python 3.11+ / SQLAlchemy 2.0 / Alembic)\n- RBAC 3 vai trò: Ban Giám Đốc, Vận Hành, Kế Toán\n- Biểu giá EVN TOU 3 khung giờ\n- Tính COGS thực tế & Phân tích tuổi nợ Aging"]
+        DB[(PostgreSQL 16 / SQLite dev)]
+        UI <-->|REST API + WebSocket Telemetry| API
+        API <--> DB
+    end
+
+    subgraph StackA["HƯỚNG A: ENTERPRISE (Công nghiệp nặng & Chuỗi kho lạnh)"]
+        TB["ThingsBoard CE 4.2 (IIoT SCADA)"]
+        ERP["ERPNext v15 (ERP, Bảo trì, Kho vật tư)"]
+        ConnA["Connector A (Alarm -> Maintenance Request + Khóa kho R404A)"]
+        TB --> ConnA --> ERP
+        ConnA -.->|Đẩy dữ liệu| API
+    end
+
+    subgraph StackB["HƯỚNG B: LIGHTWEIGHT (ESCO & Cho thuê kho lạnh buồng)"]
+        HA["Home Assistant Core (Metering & Relay)"]
+        Ninja["Invoice Ninja v5 (Billing & Cổng thanh toán)"]
+        Twenty["Twenty CRM (Lead & Hợp đồng thuê)"]
+        ConnB["Connector B (ΔkWh + Biểu giá TOU -> Hóa đơn tự động)"]
+        HA --> ConnB --> Ninja
+        Twenty -.-> Ninja
+        ConnB -.->|Đẩy dữ liệu| API
+    end
+
+    subgraph Dashboards["GIÁM SÁT KỸ THUẬT & TV KIOSK"]
+        Grafana["Grafana 11 (Dashboards riêng cho từng Stack)"]
+        DB --> Grafana
+    end
+```
+
+---
+
+## 📦 CÁC THÀNH PHẦN NỀN TẢNG (STACK COMPONENTS)
+
+| Phân hệ | Công nghệ | Thư mục mã nguồn | Trách nhiệm chính |
 | :--- | :--- | :--- | :--- |
-| **ThingsBoard** | [thingsboard/thingsboard](https://github.com/thingsboard/thingsboard) | **IIoT & SCADA** | Thu thập telemetry nhiệt độ, áp suất, công suất điện kW, độ rung máy nén; Rule Engine kích hoạt Alarm khi $COP < 3.2$. |
-| **Home Assistant** | [home-assistant/core](https://github.com/home-assistant/core) | **Local IoT & Metering** | Đọc công tơ điện thông minh theo từng kho buồng, cảm biến môi trường tòa nhà, điều khiển van ngắt nguồn. |
-| **ERPNext** | [frappe/erpnext](https://github.com/frappe/erpnext) | **ERP Toàn Diện** | Quản lý kho lạnh (WMS), tự động tạo Lệnh bảo trì máy (Maintenance Work Order) khi IoT báo quá nhiệt, kế toán giá thành. |
-| **Odoo** | [odoo/odoo](https://github.com/odoo/odoo) | **ERP Thay Thế** | Lựa chọn thay thế cho ERPNext khi doanh nghiệp cần hệ sinh thái App thương mại điện tử, POS và bán lẻ rộng lớn. |
-| **Twenty** | [twentyhq/twenty](https://github.com/twentyhq/twenty) | **CRM Bán Hàng** | Quản lý danh sách khách hàng thuê kho lạnh, theo dõi hợp đồng cung cấp nhiệt/lạnh, phễu chốt deal B2B. |
-| **Invoice Ninja** | [invoiceninja/invoiceninja](https://github.com/invoiceninja/invoiceninja) | **Billing & Invoicing** | Tự động xuất hóa đơn dựa trên số đo điện/nhiệt thực tế (Usage-based Billing), cổng thanh toán trực tuyến, quản trị công nợ. |
-| **Grafana** | [grafana/grafana](https://github.com/grafana/grafana) | **Command Center** | Hợp nhất dữ liệu IoT và Tài chính lên màn hình TV của Ban Giám đốc; tự động làm mới thời gian thực (Kiosk Mode). |
+| **Backend API** | FastAPI, SQLAlchemy 2, Alembic, Pydantic v2 | `backend/` | RESTful API, WebSocket thời gian thực, xác thực JWT, RBAC 3 vai trò (BGD, Vận hành, Kế toán), tính toán điện TOU, HACCP compliance. |
+| **Frontend SPA** | React 18, Vite, TypeScript, Tailwind, Recharts | `frontend/` | Giao diện buồng lái điều hành (Overview, Thermal, Business, Alerts), chỉ báo độ trễ dữ liệu (`LiveBadge`), tự động reconnect WebSocket. |
+| **Multi-Platform** | Capacitor, PWA Service Worker, Kiosk Scripts | `frontend/android/`, `clients/` | Ứng dụng Android APK native, Progressive Web App (offline caching), và chế độ Edge/Chrome Kiosk toàn màn hình cho TV điều hành. |
+| **Connector A** | FastAPI Event Bridge | `connectors/thingsboard-to-erpnext/` | Bắt alarm IoT từ ThingsBoard, tạo `Maintenance Request` gán `asset`, tự động giữ kho gas R404A, chống lặp ticket bằng cooldown. |
+| **Connector B** | FastAPI Billing Bridge | `connectors/ha-to-invoiceninja/` | Đọc chỉ số công tơ, tính $\Delta kWh$, phân bổ chi phí theo 3 khung giờ EVN, xuất hóa đơn Invoice Ninja với cơ chế Dead-Letter Queue. |
+| **Grafana Dashboards** | Grafana Provisioning | `grafana/` | Cung cấp 3 dashboard độc lập (`app`, `enterprise`, `lightweight`) tối ưu cho màn hình TV Kiosk. |
 
 ---
 
-## 🏗️ HAI BỘ GIẢI PHÁP KIẾN TRÚC TRIỂN KHAI
+## ⚙️ YÊU CẦU TIÊN QUYẾT (PREREQUISITES)
 
-### 🔹 HƯỚNG A: DOANH NGHIỆP CÔNG NGHIỆP & CHUỖI KHO LẠNH LỚN
-> **ThingsBoard (IIoT) $\times$ ERPNext (ERP & Bảo trì) $\times$ Grafana (Chỉ huy TV)**
-- **Bối cảnh:** Nhà máy chế biến, kho bảo quản âm sâu ($-25^\circ\text{C}$ đến $-35^\circ\text{C}$), trạm Chiller cỡ lớn, lò hơi công nghiệp.
-- **Điểm nhấn:** Thu thập dữ liệu SCADA từ PLC qua MQTT $\rightarrow$ Tự động sinh phiếu sửa chữa máy móc và xuất kho linh kiện thay thế trên ERPNext.
-- **Tài liệu chi tiết:** [architecture/ARCHITECTURE_A_ENTERPRISE.md](architecture/ARCHITECTURE_A_ENTERPRISE.md)
-- **Lệnh khởi chạy 1-click:**
-  ```bash
-  docker-compose -f docker/docker-compose.enterprise.yml up -d
-  ```
+- **Hệ điều hành:** Windows 10/11, macOS, hoặc Linux.
+- **Docker Desktop:** Khuyến nghị cấp tối thiểu **4 GB RAM** (nếu chạy Stack A ERPNext/ThingsBoard khuyến nghị **8 GB RAM**).
+- **Python:** 3.11 hoặc 3.12 (để chạy môi trường dev và test suite).
+- **Node.js:** v20.x trở lên cùng `npm`.
 
 ---
 
-### 🔹 HƯỚNG B: DỊCH VỤ NĂNG LƯỢNG TINH GỌN & CHO THUÊ KHO (ESCO)
-> **Home Assistant (Local IoT) $\times$ Twenty (CRM) $\times$ Invoice Ninja (Billing) $\times$ Grafana**
-- **Bối cảnh:** Cho thuê phòng kho lạnh theo buồng, đo đếm điện năng điều hòa tòa nhà, bán hơi nhiệt công nghiệp theo sản lượng.
-- **Điểm nhấn:** Home Assistant đo công tơ $kWh$ $\rightarrow$ Connector B tự động tính tiền điện theo khung giờ EVN $\rightarrow$ Invoice Ninja tự động xuất hóa đơn gửi khách hàng.
-- **Tài liệu chi tiết:** [architecture/ARCHITECTURE_B_LIGHTWEIGHT.md](architecture/ARCHITECTURE_B_LIGHTWEIGHT.md)
-- **Lệnh khởi chạy 1-click:**
-  ```bash
-  docker-compose -f docker/docker-compose.lightweight.yml up -d
-  ```
+## 🚀 HƯỚNG DẪN KHỞI CHẠY NHANH (QUICK START)
 
----
-
-## 📱 HỆ SINH THÁI CLIENT ĐA NỀN TẢNG (WINDOWS .EXE, LINUX, ANDROID, IOS)
-
-Không cần code lại từ đầu, hệ thống tận dụng các ứng dụng native chính thức:
-
-| Nền tảng | Ứng dụng Quản trị & Hóa đơn (Invoice Ninja) | Ứng dụng IoT & Đo đếm (Home Assistant) | Màn hình Điều hành (Grafana) |
-| :--- | :--- | :--- | :--- |
-| **Windows PC** | File **`.exe`** (Flutter native) | Home Assistant Desktop | Browser TV Kiosk Mode (`launch-kiosk.bat`) |
-| **Linux** | File **`.AppImage`** / Snap | Home Assistant Linux Desktop | Browser Kiosk (`launch-kiosk.sh`) |
-| **Android** | File **`.apk`** / Google Play | App "Home Assistant" trên CH Play | App "Grafana" trên CH Play |
-| **iOS** | App Store (iPhone / iPad) | App "Home Assistant" trên App Store | App "Grafana" trên App Store |
-
-👉 *Xem hướng dẫn chi tiết cách tải và kết nối tại:* [clients/MOBILE_AND_DESKTOP_CLIENTS.md](clients/MOBILE_AND_DESKTOP_CLIENTS.md).
-
----
-
-## ⚡ HƯỚNG DẪN ĐIỀU KHIỂN NHANH (POWERSHELL / BASH)
-
-Trên Windows, sử dụng script điều phối `run.ps1`:
+### 1. Chuẩn bị môi trường & Biến cấu hình
+Tạo file `.env` từ file mẫu `.env.example`:
 ```powershell
-# 1. Khởi chạy Hướng A (ThingsBoard + ERPNext + Grafana)
+Copy-Item .env.example .env
+```
+Kiểm tra tính toàn vẹn cấu hình (không cần Docker):
+```powershell
+.\run.ps1 -Action Check
+```
+
+### 2. Khởi chạy Ứng dụng Chính (Khuyến nghị bắt đầu từ đây)
+Khởi chạy stack ứng dụng cốt lõi (FastAPI Backend + PostgreSQL + Grafana):
+```powershell
+.\run.ps1 -Action App
+```
+- **Backend API Docs:** [http://localhost:8080/docs](http://localhost:8080/docs)
+- **Frontend SPA (Dev):** [http://localhost:5173](http://localhost:5173) (chạy `npm run dev` trong `frontend/`)
+- **Grafana App Dashboard:** [http://localhost:3000](http://localhost:3000) (User: `admin` / Password trong `.env`)
+
+### 3. Tài khoản Demo có sẵn (Seed Data)
+| Tên đăng nhập | Mật khẩu mặc định | Vai trò (Role) | Quyền hạn |
+| :--- | :--- | :--- | :--- |
+| `bgd` | `ThermalBiz2026!` | Ban Giám Đốc | Toàn quyền xem tài chính, kỹ thuật, duyệt chi và cấu hình hệ thống. |
+| `vanhanh` | `ThermalBiz2026!` | Vận Hành | Giám sát kỹ thuật nhiệt, trạng thái thiết bị, xác nhận/đóng cảnh báo. |
+| `ketoan` | `ThermalBiz2026!` | Kế Toán | Quản trị doanh thu, chi phí điện, công nợ khách hàng và xuất hóa đơn. |
+
+---
+
+## 🏭 KHỞI CHẠY CÁC STACK MỞ RỘNG (ENTERPRISE / LIGHTWEIGHT)
+
+### Hướng A: Công nghiệp nặng (ThingsBoard + ERPNext)
+```powershell
 .\run.ps1 -Action Enterprise
+```
+- **ThingsBoard IIoT:** [http://localhost:8083](http://localhost:8083)
+- **ERPNext v15:** [http://localhost:8000](http://localhost:8000)
+- **Connector A Webhook:** [http://localhost:8081/health](http://localhost:8081/health)
 
-# 2. Khởi chạy Hướng B (Home Assistant + Invoice Ninja + Grafana)
+### Hướng B: ESCO & Cho thuê kho (Home Assistant + Invoice Ninja + Twenty)
+```powershell
 .\run.ps1 -Action Lightweight
+```
+- **Home Assistant:** [http://localhost:8123](http://localhost:8123)
+- **Invoice Ninja v5:** [http://localhost:8088](http://localhost:8088)
+- **Twenty CRM:** [http://localhost:3002](http://localhost:3002)
+- **Grafana ESCO:** [http://localhost:3001](http://localhost:3001)
+- **Connector B API:** [http://localhost:8082/health](http://localhost:8082/health)
 
-# 3. Mở màn hình TV Kiosk không viền toàn màn hình cho Ban Giám đốc
+### Mở Màn hình TV Kiosk Toàn Màn hình
+```powershell
 .\run.ps1 -Action Kiosk
+```
 
-# 4. Dừng toàn bộ các container
+### Dừng Tất cả các Container
+```powershell
 .\run.ps1 -Action Stop
 ```
 
 ---
 
-## 📂 CẤU TRÚC THƯ MỤC DỰ ÁN
+## 🧪 KIỂM THỬ TỰ ĐỘNG & BẢO ĐẢM CHẤT LƯỢNG (TEST SUITE)
+
+Dự án duy trì bộ kiểm thử tự động toàn diện với tỷ lệ pass 100%:
+
+```powershell
+# 1. Kiểm thử Backend (193 tests)
+.\.venv\Scripts\pytest backend\tests -q
+
+# 2. Kiểm thử Connectors & Bảo mật Ingest (17 tests)
+.\.venv\Scripts\pytest connectors\tests -q
+
+# 3. Kiểm thử Frontend Vitest (82 tests)
+npm --prefix frontend test -- --run
+
+# 4. Kiểm tra TypeScript Type Check
+npm --prefix frontend run build
+```
+
+---
+
+## 📁 CẤU TRÚC THƯ MỤC DỰ ÁN
 
 ```
 thermal-biz-command-center/
-├── architecture/
-│   ├── ARCHITECTURE_A_ENTERPRISE.md       # Thiết kế kỹ thuật Hướng A (ThingsBoard + ERPNext)
-│   └── ARCHITECTURE_B_LIGHTWEIGHT.md      # Thiết kế kỹ thuật Hướng B (HA + Invoice Ninja + Twenty)
-├── docker/
-│   ├── docker-compose.enterprise.yml      # Cụm container Hướng A
-│   ├── docker-compose.lightweight.yml     # Cụm container Hướng B
-│   └── env.sample                         # Mẫu cấu hình cổng và secret keys
-├── connectors/
-│   ├── thingsboard-to-erpnext/            # Cầu nối: Alarm IoT -> Phiếu bảo trì ERPNext
-│   └── ha-to-invoiceninja/                # Cầu nối: Số đo kWh -> Hóa đơn Invoice Ninja
-├── grafana/
-│   ├── provisioning/                      # Cấu hình tự động nạp Datasource và Dashboard
-│   └── dashboards/
-│       ├── industrial_thermal_erpnext.json # Dashboard TV Hướng A
-│       └── esco_billing_invoiceninja.json  # Dashboard TV Hướng B
-├── clients/
-│   ├── desktop-kiosk/                     # File kích hoạt TV Kiosk cho Windows & Linux
-│   └── MOBILE_AND_DESKTOP_CLIENTS.md      # Hướng dẫn setup client Windows, Linux, Android, iOS
-├── database/                              # SQL Schema & Seed Data cho Kỹ thuật Nhiệt & Kinh doanh
-├── run.ps1                                # Script điều phối 1-click
-└── README.md                              # Tài liệu tổng thể
+├── .github/workflows/          # CI/CD pipelines (Backend test với Postgres 16 thật, Frontend Vitest, PWA/Android build)
+├── architecture/               # Hồ sơ thiết kế kiến trúc chi tiết Hướng A & Hướng B
+├── backend/                    # FastAPI Backend
+│   ├── alembic/                # Database migrations
+│   ├── app/                    # Models, Routers, Services (billing, thermal, finance, ingest)
+│   └── tests/                  # Pytest test suite (193 tests)
+├── connectors/                 # Event & Metering Bridges
+│   ├── thingsboard-to-erpnext/ # Connector A: ThingsBoard -> ERPNext Maintenance Request
+│   ├── ha-to-invoiceninja/     # Connector B: Home Assistant -> Invoice Ninja ΔkWh Billing
+│   └── tests/                  # Connector security test suite (17 tests)
+├── database/                   # Khởi tạo SQL & Seed scripts
+│   └── migrations/             # Tách riêng PostgreSQL và MariaDB dialects
+├── docker/                     # Docker Compose cho các stack mở rộng (enterprise, lightweight)
+├── frontend/                   # React 18 SPA + Capacitor Android + PWA
+│   ├── src/                    # Components, Pages, Store, WebSocket hooks
+│   └── android/                # Native Android Capacitor Project
+├── grafana/                    # Provisioning YAML & JSON Dashboards cho 3 stack
+├── clients/                    # Hướng dẫn kết nối mobile/desktop & Kiosk launch scripts
+├── run.ps1                     # Orchestrator điều khiển tự động toàn bộ hệ thống
+└── docker-compose.yml          # Compose stack ứng dụng chính
 ```
+
+---
+
+## 🔒 BẢO MẬT & TUÂN THỦ DỮ LIỆU
+- **JWT & Password Security:** Mật khẩu người dùng được băm an toàn bằng `bcrypt`. Token JWT mang thời hạn hợp lệ cụ thể với thuật toán mã hóa HS256.
+- **Header Authentication:** Toàn bộ webhook và API endpoint trung gian bắt buộc có header `X-Connector-API-Key`.
+- **An toàn Ingest:** Ngăn chặn tuyệt đối việc client tự khai đơn giá điện hay client_id tùy ý; toàn bộ đơn giá được quyết định tại server.
+- **Tiêu chuẩn An toàn Thực phẩm:** Giám sát liên tục ngưỡng HACCP cho toàn bộ kho lạnh nhiệt độ âm sâu với thời gian phản hồi cảnh báo tức thì.

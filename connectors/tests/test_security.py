@@ -260,9 +260,11 @@ def test_b_calculates_evn_tou_distribution_and_delta():
 
 
 def test_b_enforces_idempotency_for_billing_period():
+    import uuid
+    unique_period = f"2026-11-{uuid.uuid4().hex[:8]}"
     mod = connector_b()
     with TestClient(mod.app) as client:
-        payload = {**METER_BODY, "billing_period": "2026-11-TEST"}
+        payload = {**METER_BODY, "billing_period": unique_period}
         res1 = client.post("/api/generate-invoice", json=payload, headers=auth_headers())
         assert res1.status_code == 200
         assert res1.json()["status"] == "simulated"

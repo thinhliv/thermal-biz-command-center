@@ -1,0 +1,215 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "❄️ KHỐI 1: TỔNG QUAN TÀI CHÍNH & VẬN HÀNH KHO NHIỆT (EXECUTIVE SUMMARY)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "mysql", "uid": "ERPNext_MariaDB" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null }
+            ]
+          },
+          "unit": "currencyVND"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT SUM(revenue_amount) AS 'Doanh số hôm nay' FROM business_revenue WHERE order_date = CURRENT_DATE;",
+          "refId": "A"
+        }
+      ],
+      "title": "Doanh Số Hôm Nay (ERPNext)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "mysql", "uid": "ERPNext_MariaDB" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "yellow", "value": null },
+              { "color": "red", "value": 50000000 }
+            ]
+          },
+          "unit": "currencyVND"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 1 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT SUM(electricity_cost) AS 'Chi phí điện' FROM business_revenue WHERE order_date = CURRENT_DATE;",
+          "refId": "A"
+        }
+      ],
+      "title": "Chi Phí Điện Vận Hành Lạnh (ERPNext)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "mysql", "uid": "ERPNext_MariaDB" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null },
+              { "color": "red", "value": 100000000 }
+            ]
+          },
+          "unit": "currencyVND"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 1 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT SUM(remaining_amount) AS 'Nợ quá hạn' FROM accounts_receivable WHERE due_date < CURRENT_DATE;",
+          "refId": "A"
+        }
+      ],
+      "title": "Nợ Quá Hạn Cần Thu Hồi (ERPNext)",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "mysql", "uid": "ERPNext_MariaDB" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "max": 5.0,
+          "min": 1.0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 3.2 },
+              { "color": "green", "value": 3.8 }
+            ]
+          }
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 1 },
+      "id": 5,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT ROUND(AVG(cop_efficiency), 2) AS 'COP trung bình' FROM thermal_telemetry;",
+          "refId": "A"
+        }
+      ],
+      "title": "Hệ Số Làm Lạnh Trung Bình (COP - ThingsBoard)",
+      "type": "gauge"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 5 },
+      "id": 6,
+      "title": "⚙️ KHỐI 2: THÔNG SỐ VẬN HÀNH SCADA & KHO NHIỆT LẠNH THỰC TẾ",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "mysql", "uid": "ERPNext_MariaDB" },
+      "gridPos": { "h": 7, "w": 14, "x": 0, "y": 6 },
+      "id": 7,
+      "options": {
+        "footer": { "show": false },
+        "sortBy": []
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT equipment_name AS 'Thiết bị', temperature_c AS 'Nhiệt độ (°C)', pressure_bar AS 'Áp suất (Bar)', power_kw AS 'Công suất (kW)', cop_efficiency AS 'COP', status AS 'Trạng thái' FROM thermal_telemetry;",
+          "refId": "A"
+        }
+      ],
+      "title": "Giám Sát Chi Tiết Các Cụm Máy & Buồng Lạnh (ThingsBoard SCADA)",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "mysql", "uid": "ERPNext_MariaDB" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "currencyVND"
+        }
+      },
+      "gridPos": { "h": 7, "w": 10, "x": 14, "y": 6 },
+      "id": 8,
+      "options": {
+        "barRadius": 0.2,
+        "barWidth": 0.6,
+        "groupWidth": 0.7,
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "orientation": "horizontal",
+        "showValue": "always"
+      },
+      "targets": [
+        {
+          "format": "table",
+          "rawSql": "SELECT customer_name AS 'Khách hàng', remaining_amount AS 'Số tiền nợ' FROM accounts_receivable WHERE remaining_amount > 0 ORDER BY remaining_amount DESC LIMIT 5;",
+          "refId": "A"
+        }
+      ],
+      "title": "Top 5 Khách Hàng Công Nợ Cao Nhất (ERPNext)",
+      "type": "barchart"
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["industrial", "thingsboard", "erpnext", "thermal"],
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": { "refresh_intervals": ["5s", "10s", "30s", "1m"] },
+  "timezone": "browser",
+  "title": "HƯỚNG A: Industrial Thermal & ERPNext Command Center",
+  "uid": "industrial-thermal-erpnext",
+  "version": 1
+}

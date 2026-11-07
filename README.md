@@ -1,90 +1,107 @@
 # ❄️🔥 THERMAL & BUSINESS EXECUTIVE COMMAND CENTER
 ### Hệ Thống Điều Hành Doanh Nghiệp Liên Ngành: Quản Trị Kinh Doanh &times; Công Nghệ Kỹ Thuật Nhiệt
 
----
-
-## 📌 GIỚI THIỆU TỔNG QUAN
-
-Dự án này là giải pháp **Trung tâm Điều hành Số Hợp nhất (Unified Executive Command Center)** được thiết kế chuyên biệt cho các doanh nghiệp hoạt động trong lĩnh vực **Kỹ thuật Nhiệt - Lạnh** (Kho lạnh bảo quản thủy hải sản/nông sản, hệ thống điều hòa không khí Chiller trung tâm, nhà máy cung cấp nhiệt/lò hơi công nghiệp).
-
-Hệ thống kết nối trực tiếp hai huyết mạch của doanh nghiệp:
-1. **Dòng dữ liệu Kỹ thuật Nhiệt (Thermal Telemetry):** Nhiệt độ phòng lạnh, áp suất bay hơi/ngưng tụ, công suất điện tiêu thụ ($kW$), hệ số hiệu quả làm lạnh $COP$.
-2. **Dòng dữ liệu Quản trị & Tài chính (Business & P&L):** Doanh số theo thời gian thực, chi phí điện năng vận hành ($kWh \times \text{Đơn giá EVN}$), biên lợi nhuận gộp %, và phân tích tuổi nợ khách hàng (Aging Receivables).
+Dự án tích hợp và tối ưu hóa năng lực của **7 nền tảng mã nguồn mở hàng đầu thế giới** thành hai bộ giải pháp kiến trúc hoàn chỉnh, phục vụ cho các doanh nghiệp hoạt động trong lĩnh vực **Kỹ thuật Nhiệt - Lạnh** (Kho lạnh bảo quản, Trạm Chiller điều hòa trung tâm, Lò hơi công nghiệp, Cho thuê kho và Dịch vụ năng lượng ESCO).
 
 ---
 
-## 💻 HỖ TRỢ ĐA NỀN TẢNG (CROSS-PLATFORM SUITE)
+## 📌 BẢN ĐỒ KHAI THÁC 7 NỀN TẢNG MÃ NGUỒN MỞ
 
-Hệ thống được đóng gói để chạy mượt mà trên tất cả các thiết bị:
-
-| Nền tảng | Định dạng phần mềm | Mục đích sử dụng |
-| :--- | :--- | :--- |
-| **Windows PC** | `.exe` (Cài đặt installer & Bản portable không cần cài) | Màn hình máy tính làm việc của Ban Giám đốc & TV Kiosk phòng họp |
-| **Linux** | `.AppImage` / `.deb` | Trạm vận hành xưởng máy hoặc máy chủ trung tâm Ubuntu/Debian |
-| **Android** | `.apk` (Capacitor Android native) | Ban Lãnh đạo giám sát từ xa trên điện thoại Android |
-| **iOS** | Xcode Project / PWA Web App native | Ban Lãnh đạo giám sát từ xa trên iPhone / iPad |
-| **Web / TV Kiosk** | Responsive Web App | Hiển thị toàn màn hình trên Smart TV phòng chỉ huy |
-
----
-
-## 🚀 HƯỚNG DẪN CÀI ĐẶT & CHẠY DỰ ÁN
-
-### 1. Khởi chạy Cụm Cơ sở Dữ liệu & Grafana (Docker)
-```bash
-docker-compose up -d
-```
-- **PostgreSQL Database:** Cổng `5432` (Chứa sẵn schema và dữ liệu mẫu nhiệt & kinh doanh).
-- **Grafana Dashboard:** Cổng `3000` (Tài khoản xem không cần mật khẩu).
-- **Backend FastAPI:** Cổng `8000` (Tài liệu API tại `http://localhost:8000/docs`).
-
-### 2. Chạy ứng dụng Dashboard Frontend (Chế độ Nhà phát triển)
-```bash
-cd frontend
-npm install
-npm run dev
-```
-Truy cập: `http://localhost:5173` để xem giao diện với đầy đủ nút chuyển đổi **PC Widescreen View** và **Mobile Smartphone View**.
+| Nền tảng | Kho mã nguồn GitHub | Tầng kiến trúc | Vai trò chính xác trong hệ thống |
+| :--- | :--- | :--- | :--- |
+| **ThingsBoard** | [thingsboard/thingsboard](https://github.com/thingsboard/thingsboard) | **IIoT & SCADA** | Thu thập telemetry nhiệt độ, áp suất, công suất điện kW, độ rung máy nén; Rule Engine kích hoạt Alarm khi $COP < 3.2$. |
+| **Home Assistant** | [home-assistant/core](https://github.com/home-assistant/core) | **Local IoT & Metering** | Đọc công tơ điện thông minh theo từng kho buồng, cảm biến môi trường tòa nhà, điều khiển van ngắt nguồn. |
+| **ERPNext** | [frappe/erpnext](https://github.com/frappe/erpnext) | **ERP Toàn Diện** | Quản lý kho lạnh (WMS), tự động tạo Lệnh bảo trì máy (Maintenance Work Order) khi IoT báo quá nhiệt, kế toán giá thành. |
+| **Odoo** | [odoo/odoo](https://github.com/odoo/odoo) | **ERP Thay Thế** | Lựa chọn thay thế cho ERPNext khi doanh nghiệp cần hệ sinh thái App thương mại điện tử, POS và bán lẻ rộng lớn. |
+| **Twenty** | [twentyhq/twenty](https://github.com/twentyhq/twenty) | **CRM Bán Hàng** | Quản lý danh sách khách hàng thuê kho lạnh, theo dõi hợp đồng cung cấp nhiệt/lạnh, phễu chốt deal B2B. |
+| **Invoice Ninja** | [invoiceninja/invoiceninja](https://github.com/invoiceninja/invoiceninja) | **Billing & Invoicing** | Tự động xuất hóa đơn dựa trên số đo điện/nhiệt thực tế (Usage-based Billing), cổng thanh toán trực tuyến, quản trị công nợ. |
+| **Grafana** | [grafana/grafana](https://github.com/grafana/grafana) | **Command Center** | Hợp nhất dữ liệu IoT và Tài chính lên màn hình TV của Ban Giám đốc; tự động làm mới thời gian thực (Kiosk Mode). |
 
 ---
 
-## 📦 HƯỚNG DẪN ĐÓNG GÓI RA PHẦN MỀM (.EXE, LINUX, ANDROID, IOS)
+## 🏗️ HAI BỘ GIẢI PHÁP KIẾN TRÚC TRIỂN KHAI
 
-### A. Đóng gói ra File `.exe` cho Windows & File cho Linux
-```bash
-cd frontend
-# Đóng gói ra file cài đặt Windows (.exe)
-npm run electron:build:win
+### 🔹 HƯỚNG A: DOANH NGHIỆP CÔNG NGHIỆP & CHUỖI KHO LẠNH LỚN
+> **ThingsBoard (IIoT) $\times$ ERPNext (ERP & Bảo trì) $\times$ Grafana (Chỉ huy TV)**
+- **Bối cảnh:** Nhà máy chế biến, kho bảo quản âm sâu ($-25^\circ\text{C}$ đến $-35^\circ\text{C}$), trạm Chiller cỡ lớn, lò hơi công nghiệp.
+- **Điểm nhấn:** Thu thập dữ liệu SCADA từ PLC qua MQTT $\rightarrow$ Tự động sinh phiếu sửa chữa máy móc và xuất kho linh kiện thay thế trên ERPNext.
+- **Tài liệu chi tiết:** [architecture/ARCHITECTURE_A_ENTERPRISE.md](architecture/ARCHITECTURE_A_ENTERPRISE.md)
+- **Lệnh khởi chạy 1-click:**
+  ```bash
+  docker-compose -f docker/docker-compose.enterprise.yml up -d
+  ```
 
-# Đóng gói ra file Linux (.AppImage)
-npm run electron:build:linux
-```
-*File `.exe` sẽ được tự động xuất ra trong thư mục `frontend/release/`.*
+---
 
-### B. Đóng gói ra Ứng dụng Di động (Android & iOS)
-Hệ thống sử dụng **Capacitor**:
-```bash
-cd frontend
-# 1. Build mã nguồn giao diện
-npm run build
+### 🔹 HƯỚNG B: DỊCH VỤ NĂNG LƯỢNG TINH GỌN & CHO THUÊ KHO (ESCO)
+> **Home Assistant (Local IoT) $\times$ Twenty (CRM) $\times$ Invoice Ninja (Billing) $\times$ Grafana**
+- **Bối cảnh:** Cho thuê phòng kho lạnh theo buồng, đo đếm điện năng điều hòa tòa nhà, bán hơi nhiệt công nghiệp theo sản lượng.
+- **Điểm nhấn:** Home Assistant đo công tơ $kWh$ $\rightarrow$ Connector B tự động tính tiền điện theo khung giờ EVN $\rightarrow$ Invoice Ninja tự động xuất hóa đơn gửi khách hàng.
+- **Tài liệu chi tiết:** [architecture/ARCHITECTURE_B_LIGHTWEIGHT.md](architecture/ARCHITECTURE_B_LIGHTWEIGHT.md)
+- **Lệnh khởi chạy 1-click:**
+  ```bash
+  docker-compose -f docker/docker-compose.lightweight.yml up -d
+  ```
 
-# 2. Đồng bộ mã nguồn sang Android / iOS
-npx cap add android
-npx cap add ios
-npx cap sync
+---
 
-# 3. Mở Android Studio để xuất file .apk
-npx cap open android
+## 📱 HỆ SINH THÁI CLIENT ĐA NỀN TẢNG (WINDOWS .EXE, LINUX, ANDROID, IOS)
 
-# 4. Mở Xcode trên macOS để xuất file .ipa cho iPhone
-npx cap open ios
+Không cần code lại từ đầu, hệ thống tận dụng các ứng dụng native chính thức:
+
+| Nền tảng | Ứng dụng Quản trị & Hóa đơn (Invoice Ninja) | Ứng dụng IoT & Đo đếm (Home Assistant) | Màn hình Điều hành (Grafana) |
+| :--- | :--- | :--- | :--- |
+| **Windows PC** | File **`.exe`** (Flutter native) | Home Assistant Desktop | Browser TV Kiosk Mode (`launch-kiosk.bat`) |
+| **Linux** | File **`.AppImage`** / Snap | Home Assistant Linux Desktop | Browser Kiosk (`launch-kiosk.sh`) |
+| **Android** | File **`.apk`** / Google Play | App "Home Assistant" trên CH Play | App "Grafana" trên CH Play |
+| **iOS** | App Store (iPhone / iPad) | App "Home Assistant" trên App Store | App "Grafana" trên App Store |
+
+👉 *Xem hướng dẫn chi tiết cách tải và kết nối tại:* [clients/MOBILE_AND_DESKTOP_CLIENTS.md](clients/MOBILE_AND_DESKTOP_CLIENTS.md).
+
+---
+
+## ⚡ HƯỚNG DẪN ĐIỀU KHIỂN NHANH (POWERSHELL / BASH)
+
+Trên Windows, sử dụng script điều phối `run.ps1`:
+```powershell
+# 1. Khởi chạy Hướng A (ThingsBoard + ERPNext + Grafana)
+.\run.ps1 -Action Enterprise
+
+# 2. Khởi chạy Hướng B (Home Assistant + Invoice Ninja + Grafana)
+.\run.ps1 -Action Lightweight
+
+# 3. Mở màn hình TV Kiosk không viền toàn màn hình cho Ban Giám đốc
+.\run.ps1 -Action Kiosk
+
+# 4. Dừng toàn bộ các container
+.\run.ps1 -Action Stop
 ```
 
 ---
 
-## 🔄 TỰ ĐỘNG HÓA CI/CD TRÊN GITHUB ACTIONS
+## 📂 CẤU TRÚC THƯ MỤC DỰ ÁN
 
-Kho lưu trữ đã được tích hợp sẵn file cấu hình tự động: `.github/workflows/build-crossplatform.yml`.
-Mỗi khi bạn đẩy mã nguồn lên GitHub, GitHub Actions sẽ tự động:
-1. Dựng máy ảo Windows để biên dịch file **`.exe`**.
-2. Dựng máy ảo Linux để biên dịch file **`AppImage`**.
-3. Đóng gói file cài đặt và đưa vào mục **Releases / Artifacts** của GitHub để tải về dùng ngay mà không cần cài đặt các công cụ build nặng nề trên máy tính cá nhân.
+```
+thermal-biz-command-center/
+├── architecture/
+│   ├── ARCHITECTURE_A_ENTERPRISE.md       # Thiết kế kỹ thuật Hướng A (ThingsBoard + ERPNext)
+│   └── ARCHITECTURE_B_LIGHTWEIGHT.md      # Thiết kế kỹ thuật Hướng B (HA + Invoice Ninja + Twenty)
+├── docker/
+│   ├── docker-compose.enterprise.yml      # Cụm container Hướng A
+│   ├── docker-compose.lightweight.yml     # Cụm container Hướng B
+│   └── env.sample                         # Mẫu cấu hình cổng và secret keys
+├── connectors/
+│   ├── thingsboard-to-erpnext/            # Cầu nối: Alarm IoT -> Phiếu bảo trì ERPNext
+│   └── ha-to-invoiceninja/                # Cầu nối: Số đo kWh -> Hóa đơn Invoice Ninja
+├── grafana/
+│   ├── provisioning/                      # Cấu hình tự động nạp Datasource và Dashboard
+│   └── dashboards/
+│       ├── industrial_thermal_erpnext.json # Dashboard TV Hướng A
+│       └── esco_billing_invoiceninja.json  # Dashboard TV Hướng B
+├── clients/
+│   ├── desktop-kiosk/                     # File kích hoạt TV Kiosk cho Windows & Linux
+│   └── MOBILE_AND_DESKTOP_CLIENTS.md      # Hướng dẫn setup client Windows, Linux, Android, iOS
+├── database/                              # SQL Schema & Seed Data cho Kỹ thuật Nhiệt & Kinh doanh
+├── run.ps1                                # Script điều phối 1-click
+└── README.md                              # Tài liệu tổng thể
+```

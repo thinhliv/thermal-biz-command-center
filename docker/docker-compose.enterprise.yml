@@ -1,0 +1,95 @@
+version: '3.8'
+
+# HƯỚNG A: STACK CÔNG NGHIỆP TOÀN DIỆN
+# ThingsBoard (IIoT) + ERPNext / DB + Grafana + Connector A
+
+services:
+  # 1. ThingsBoard Community Edition (IIoT Platform)
+  thingsboard:
+    image: thingsboard/tb-postgres:latest
+    container_name: enterprise_thingsboard
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "1883:1883"      # MQTT Port
+      - "5683:5683/udp"  # CoAP Port
+    environment:
+      TB_QUEUE_TYPE: in-memory
+      SPRING_DATASOURCE_URL: jdbc:postgresql://tb_postgres:5432/thingsboard
+      SPRING_DATASOURCE_USERNAME: tb_user
+      SPRING_DATASOURCE_PASSWORD: tb_password_2026
+    volumes:
+      - tb_data:/data
+      - tb_logs:/var/log/thingsboard
+    depends_on:
+      - tb_postgres
+
+  tb_postgres:
+    image: postgres:15-alpine
+    container_name: enterprise_tb_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: thingsboard
+      POSTGRES_USER: tb_user
+      POSTGRES_PASSWORD: tb_password_2026
+    volumes:
+      - tb_pg_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  # 2. ERPNext Database / Business Layer View
+  erp_database:
+    image: mariadb:10.11
+    container_name: enterprise_erp_mariadb
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: erp_root_password_2026
+      MYSQL_DATABASE: erpnext_db
+      MYSQL_USER: erp_user
+      MYSQL_PASSWORD: erp_password_2026
+    volumes:
+      - erp_data:/var/lib/mysql
+      - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "3306:3306"
+
+  # 3. Connector A: ThingsBoard Alarm to ERPNext Maintenance Bridge
+  connector_a:
+    build:
+      context: ../connectors/thingsboard-to-erpnext
+      dockerfile: Dockerfile
+    container_name: enterprise_connector_a
+    restart: unless-stopped
+    environment:
+      ERPNEXT_URL: http://erp_database:8000
+      ERPNEXT_API_KEY: mock_key
+      ERPNEXT_API_SECRET: mock_secret
+    ports:
+      - "8081:8081"
+
+  # 4. Grafana Unified Executive Command Center
+  grafana:
+    image: grafana/grafana:latest
+    container_name: enterprise_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_USERS_DEFAULT_THEME: "dark"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../grafana/provisioning:/etc/grafana/provisioning
+      - ../grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - tb_postgres
+      - erp_database
+
+volumes:
+  tb_data:
+  tb_logs:
+  tb_pg_data:
+  erp_data:
+  grafana_data:

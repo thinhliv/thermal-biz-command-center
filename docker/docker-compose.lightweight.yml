@@ -1,0 +1,91 @@
+version: '3.8'
+
+# HƯỚNG B: STACK DỊCH VỤ NĂNG LƯỢNG TINH GỌN & CHO THUÊ KHO LẠNH (ESCO)
+# Home Assistant + Invoice Ninja + Twenty CRM + Grafana + Connector B
+
+services:
+  # 1. Home Assistant Core (Local IoT & Metering)
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: esco_homeassistant
+    restart: unless-stopped
+    privileged: true
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+    volumes:
+      - hass_config:/config
+    ports:
+      - "8123:8123"
+
+  # 2. Invoice Ninja Database
+  ninja_db:
+    image: mariadb:10.11
+    container_name: esco_ninja_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ninja_root_pass_2026
+      MYSQL_DATABASE: ninja
+      MYSQL_USER: ninja
+      MYSQL_PASSWORD: ninja_pass_2026
+    volumes:
+      - ninja_db_data:/var/lib/mysql
+    ports:
+      - "3307:3306"
+
+  # 3. Invoice Ninja (Billing & Invoicing Suite)
+  invoiceninja:
+    image: invoiceninja/invoiceninja:latest
+    container_name: esco_invoiceninja
+    restart: unless-stopped
+    environment:
+      APP_URL: http://localhost:8088
+      APP_KEY: base64:vI6sA3m6qX9k4zP5lM8j7vR2wQ1eT4yU7iO0pL3kJ2g=
+      DB_TYPE: mysql
+      DB_HOST: ninja_db
+      DB_DATABASE: ninja
+      DB_USERNAME: ninja
+      DB_PASSWORD: ninja_pass_2026
+    ports:
+      - "8088:80"
+    depends_on:
+      - ninja_db
+
+  # 4. Connector B: Home Assistant to Invoice Ninja Metering Bridge
+  connector_b:
+    build:
+      context: ../connectors/ha-to-invoiceninja
+      dockerfile: Dockerfile
+    container_name: esco_connector_b
+    restart: unless-stopped
+    environment:
+      HASS_URL: http://homeassistant:8123
+      HASS_TOKEN: mock_ha_token
+      INVOICE_NINJA_URL: http://invoiceninja:80
+      INVOICE_NINJA_TOKEN: mock_ninja_token
+      ELECTRICITY_RATE_VND: "2500"
+    ports:
+      - "8082:8082"
+
+  # 5. Grafana Real-time Executive Cockpit
+  grafana:
+    image: grafana/grafana:latest
+    container_name: esco_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      GF_USERS_DEFAULT_THEME: "dark"
+    volumes:
+      - esco_grafana_data:/var/lib/grafana
+      - ../grafana/provisioning:/etc/grafana/provisioning
+      - ../grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - ninja_db
+
+volumes:
+  hass_config:
+  ninja_db_data:
+  esco_grafana_data:

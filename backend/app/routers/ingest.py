@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..database import get_session
-from ..models import Equipment, MeterReading, TelemetrySample
+from ..models import BilledInvoice, Equipment, MeterReading, TelemetrySample
 from ..schemas import BillingRequest, BillingResponse, TelemetryIn, TelemetryIngestResult
 from ..security import require_connector_key
 from ..services import billing, thermal
@@ -39,6 +39,12 @@ _BILLING_ERROR_STATUS = {
 
 class TelemetryBatch(BaseModel):
     samples: list[TelemetryIn] = Field(min_length=1, max_length=1000)
+
+
+class ExternalInvoiceRef(BaseModel):
+    """Tham chieu hoa don o he thong ngoai (Invoice Ninja). Column unique -> khong the gan trung."""
+
+    external_invoice_id: str = Field(min_length=1, max_length=64)
 
 
 @router.get("/health")
@@ -221,3 +227,60 @@ def generate_invoice(
 
     session.commit()
     return invoice
+
+
+@router.patch("/billing/{invoice_id}/external-reference")
+def link_external_invoice(
+    invoice_id: int,
+    payload: ExternalInvoiceRef,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_connector_key),
+) -> dict:
+    """Gan ID hoa don Invoice Ninja vao hoa don da tinh o backend.
+
+    Day moi la khoa idempotency BEN VUNG cua connector: file JSON trong container
+    mat khi restart, con cot nay thi khong. Lan chay sau thay external_invoice_id
+    da co thi biet ky nay da xuat hoa don that, khong tao ban doi.
+    """
+    invoice = session.get(BilledInvoice, invoice_id)
+    if invoice is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Khong tim thay hoa don #{invoice_id} de gan tham chieu ngoai.",
+        )
+
+    if invoice.external_invoice_id == payload.external_invoice_id:
+        return _external_ref_payload(invoice, "unchanged")
+
+    if invoice.external_invoice_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Hoa don #{invoice_id} da gan tham chieu '{invoice.external_invoice_id}'. "
+                f"Tu choi ghi de bang '{payload.external_invoice_id}'."
+            ),
+        )
+
+    holder = session.scalars(
+        select(BilledInvoice).where(BilledInvoice.external_invoice_id == payload.external_invoice_id)
+    ).first()
+    if holder is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Tham chieu '{payload.external_invoice_id}' da thuoc hoa don #{holder.id}.",
+        )
+
+    invoice.external_invoice_id = payload.external_invoice_id
+    session.commit()
+    return _external_ref_payload(invoice, "linked")
+
+
+def _external_ref_payload(invoice: BilledInvoice, outcome: str) -> dict:
+    return {
+        "status": outcome,
+        "invoice_id": invoice.id,
+        "external_invoice_id": invoice.external_invoice_id,
+        "tenant_code": invoice.tenant_code,
+        "period_start": invoice.period_start.isoformat(),
+        "period_end": invoice.period_end.isoformat(),
+    }

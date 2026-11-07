@@ -130,7 +130,7 @@ def test_moi_endpoint_api_deu_co_auth_tru_danh_sach_cho_phep():
     assert unguarded == [], f"Endpoint khong co xac thuc: {unguarded}"
 
 
-def test_bon_endpoint_ingest_deu_khoa_bang_connector_key():
+def test_moi_endpoint_ingest_deu_khoa_bang_connector_key():
     guarded = {
         (method, route.path)
         for route in _walk(app.routes)
@@ -142,6 +142,7 @@ def test_bon_endpoint_ingest_deu_khoa_bang_connector_key():
         ("POST", "/api/ingest/telemetry"),
         ("POST", "/api/ingest/telemetry/batch"),
         ("POST", "/api/ingest/billing"),
+        ("PATCH", "/api/ingest/billing/{invoice_id}/external-reference"),
     }
 
 

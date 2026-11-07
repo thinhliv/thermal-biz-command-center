@@ -660,3 +660,40 @@ class AuditLog(Base):
     previous_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="GENESIS")
     signature_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
 
+
+class Site(Base):
+    """Chi nhanh / Nha may / Kho lanh bien (Multi-Site Edge Location)."""
+
+    __tablename__ = "sites"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    location: Mapped[str] = mapped_column(String(255), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    sync_status: Mapped[str] = mapped_column(String(20), nullable=False, default="ONLINE")
+    sync_latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    pending_records_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+    sync_batches: Mapped[list["SyncBatch"]] = relationship(back_populates="site")
+
+
+class SyncBatch(Base):
+    """Goi dong bo Store-and-Forward duoc day tu Edge len Cloud."""
+
+    __tablename__ = "sync_batches"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    batch_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    site_id: Mapped[int] = mapped_column(ForeignKey("sites.id"), nullable=False)
+    site_code: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    received_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    records_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PROCESSED")
+    idempotency_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+
+    site: Mapped["Site"] = relationship(back_populates="sync_batches")
+
+

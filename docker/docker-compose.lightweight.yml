@@ -118,10 +118,18 @@ services:
       CONNECTOR_API_KEY: ${CONNECTOR_B_API_KEY:?CONNECTOR_B_API_KEY must be set in .env}
       SIMULATION_MODE: ${CONNECTOR_B_SIMULATION_MODE:-false}
       TENANT_CLIENT_MAP: ${TENANT_CLIENT_MAP:-{}}
-      # Don gia nay chi la GIA TRI TAM hien thi. Backend moi la nguoi quyet dinh don gia
-      # (SERVICE_RATE_PER_KWH dat o server) de nguoi goi API khong tu khai duoc gia.
-      SERVICE_RATE_PER_KWH: ${SERVICE_RATE_PER_KWH:-3500}
-      ELECTRICITY_RATE_VND: ${ELECTRICITY_RATE_VND:-2500}
+      # Connector KHONG giu bieu gia. Backend tinh delta kWh, chia 3 khung gio EVN va
+      # tra ve dong tien that; connector chi dich ket qua do thanh line items cua Invoice Ninja.
+      # `thermal_api:8080` la container cua stack ung dung, noi qua mang thermalbiz_shared.
+      BACKEND_URL: ${BACKEND_URL:-http://thermal_api:8080}
+      # Khoa connector dung de goi LEN backend (chinh la CONNECTOR_API_KEY cua backend).
+      BACKEND_CONNECTOR_API_KEY: ${BACKEND_CONNECTOR_API_KEY:-}
+      RETRY_BACKOFF_SECONDS: ${CONNECTOR_B_RETRY_BACKOFF_SECONDS:-1.0}
+      # Dead-letter queue phai song qua restart container: hoa don da tao ben Invoice Ninja
+      # ma chua ghi nhan lai duoc o backend la thu PHAI con de doi soat, khong duoc bay mat.
+      CONNECTOR_STATE_DIR: /data
+    volumes:
+      - connector_b_state:/data
     ports:
       - "${CONNECTOR_B_PORT:-8082}:8082"
     networks:
@@ -219,6 +227,7 @@ volumes:
   ninja_db_data:
   esco_grafana_data:
   twenty_data:
+  connector_b_state:
 
 networks:
   default:

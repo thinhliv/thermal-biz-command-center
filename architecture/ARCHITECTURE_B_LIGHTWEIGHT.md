@@ -45,10 +45,13 @@ flowchart TD
    - Dữ liệu khách hàng tự động đồng bộ sang **Invoice Ninja**.
 2. **Đo đếm chỉ số điện & nhiệt:**
    - **Home Assistant** đọc công tơ điện thông minh đo lường điện năng tiêu thụ ($kWh$) cho từng kho lạnh của từng khách hàng.
-3. **Tự động xuất hóa đơn (Automated Usage-based Billing):**
-   - Vào ngày 25 hàng tháng (hoặc chu kỳ định kỳ), `ha-to-invoiceninja connector` tự động lấy số $kWh$ từ Home Assistant:
-     $$\text{Tiền điện} = \Delta kWh \times \text{Đơn giá điện EVN} + \text{Phí quản lý bảo quản lạnh}$$
-   - Connector gọi API của **Invoice Ninja** tạo ngay hóa đơn điện tử và gửi link thanh toán trực tiếp qua email cho khách.
+3. **Xuất hóa đơn theo sản lượng (Usage-based Billing):**
+   - `ha-to-invoiceninja connector` được **gọi theo yêu cầu** qua `POST /api/generate-invoice` (kèm tenant, entity của công tơ và kỳ lập hoá đơn). **Repo hiện chưa có scheduler/cron nào** — muốn chạy định kỳ ngày 25 hàng tháng thì người vận hành phải tự thêm tác nhân kích hoạt, ví dụ một Automation của Home Assistant hoặc cron trên máy chủ.
+   - Connector đọc **chỉ số tích lũy** của công tơ từ Home Assistant, rồi gửi chỉ số đó lên **backend ThermalBiz**. Backend mới là nơi quyết định đơn giá: tính $\Delta kWh$ giữa hai lần đọc (thiếu mốc kỳ trước thì **báo lỗi chứ không đoán**), chia sản lượng theo 3 khung giờ giá điện EVN (cao điểm / bình thường / thấp điểm), cộng thêm phí dịch vụ bảo quản lạnh:
+     $$\text{Tổng tiền} = \sum_{\text{khung giờ}} kWh_{\text{khung}} \times \text{Giá}_{\text{khung}} + \Delta kWh \times \text{Phí dịch vụ/kWh}$$
+   - Connector chỉ **dịch kết quả đó** thành các dòng hoá đơn (`line_items`) của Invoice Ninja — một dòng cho mỗi khung giờ giá điện và một dòng phí dịch vụ — rồi gọi `POST /api/v1/invoices`.
+   - Sau khi tạo xong, connector **ghi ngược ID hoá đơn Invoice Ninja** về backend (`external_invoice_id`). Cột này là khóa chống xuất trùng bền vững: nó nằm trong database nên sống qua việc container khởi động lại, khác với file JSON tạm trong connector. Kỳ nào đã xuất rồi thì gọi lại chỉ nhận được hoá đơn cũ.
+   - *Chưa nối dây:* gửi link thanh toán qua email cho khách. Việc đó thuộc về tính năng gửi hoá đơn của chính Invoice Ninja (Client Portal / email template), không phải connector này.
 4. **Xử lý trễ hạn & Điều khiển phần cứng (Local Automation):**
    - Khách hàng có thể tra cứu hóa đơn và thanh toán online qua Client Portal của Invoice Ninja.
    - Nếu hóa đơn quá hạn $> 15$ ngày và khách không phản hồi $\rightarrow$ Invoice Ninja bắn webhook về Home Assistant kích hoạt còi cảnh báo hoặc tạm khóa quyền truy cập kho lạnh qua mã khóa cửa số.

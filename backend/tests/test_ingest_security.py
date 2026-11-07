@@ -415,3 +415,118 @@ def test_goi_lai_dung_ky_tra_ve_hoa_don_cu(api: TestClient, ingest: Session):
     assert second["id"] == first["id"]
     assert second["total_vnd"] == first["total_vnd"]
     assert len(list(ingest.scalars(select(BilledInvoice)))) == 1
+
+
+# --------------------------------------------------------------------------- #
+# Ghi nhan tham chieu hoa don ngoai (Invoice Ninja)
+#
+# Cot `external_invoice_id` UNIQUE la khoa idempotency BEN VUNG cua connector B:
+# file JSON trong container mat khi restart, con cot nay thi khong.
+# --------------------------------------------------------------------------- #
+def _ref_url(invoice_id: int) -> str:
+    return f"/api/ingest/billing/{invoice_id}/external-reference"
+
+
+def _issue(api: TestClient, **kw) -> dict:
+    response = api.post("/api/ingest/billing", headers=KEY, json=_billing_payload(**kw))
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_gan_tham_chieu_ngoai_cho_hoa_don_da_tinh(api: TestClient, ingest: Session):
+    invoice = _issue(api)
+
+    response = api.patch(_ref_url(invoice["id"]), headers=KEY, json={"external_invoice_id": "INV-9"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "linked"
+    assert body["invoice_id"] == invoice["id"]
+    assert body["tenant_code"] == invoice["tenant_code"]
+    ingest.expire_all()
+    assert ingest.get(BilledInvoice, invoice["id"]).external_invoice_id == "INV-9"
+
+
+def test_connector_retry_ghi_nhan_lai_dung_tham_chieu_khong_bao_loi(api: TestClient):
+    """Connector co the goi lai sau timeout. Goi dung gia tri = thanh cong, khong phai xung dot."""
+    invoice = _issue(api)
+    url, payload = _ref_url(invoice["id"]), {"external_invoice_id": "INV-9"}
+
+    assert api.patch(url, headers=KEY, json=payload).json()["status"] == "linked"
+
+    again = api.patch(url, headers=KEY, json=payload)
+    assert again.status_code == 200, again.text
+    assert again.json()["status"] == "unchanged"
+
+
+def test_tu_choi_ghi_de_tham_chieu_da_gan(api: TestClient):
+    """Mot hoa don noi bo chi duoc tro toi MOT hoa don ngoai. Ghi de = mat dau vet doi soat."""
+    invoice = _issue(api)
+    url = _ref_url(invoice["id"])
+    api.patch(url, headers=KEY, json={"external_invoice_id": "INV-9"})
+
+    response = api.patch(url, headers=KEY, json={"external_invoice_id": "INV-KHAC"})
+
+    assert response.status_code == 409
+    assert "INV-9" in response.json()["detail"]
+
+
+def test_tu_choi_tham_chieu_da_thuoc_hoa_don_khac(api: TestClient, ingest: Session):
+    """Hai ky billing khong duoc dung chung mot hoa don Invoice Ninja."""
+    first = _issue(api)
+    start, end = _period()
+    other = BilledInvoice(
+        tenant_code="THUE-ANPHAT",
+        period_start=start - timedelta(days=31),
+        period_end=start,
+        external_invoice_id="INV-9",
+    )
+    ingest.add(other)
+    ingest.commit()
+
+    second = _issue(
+        api,
+        period_start=(start + timedelta(days=62)).isoformat(),
+        period_end=(end + timedelta(days=62)).isoformat(),
+    )
+    response = api.patch(_ref_url(second["id"]), headers=KEY, json={"external_invoice_id": "INV-9"})
+
+    assert response.status_code == 409
+    assert str(other.id) in response.json()["detail"]
+    assert first["id"] != second["id"]
+
+
+def test_hoa_don_khong_ton_tai_tra_ve_404(api: TestClient):
+    response = api.patch(_ref_url(999_999), headers=KEY, json={"external_invoice_id": "INV-9"})
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize("bad_ref", ["", "x" * 65])
+def test_tham_chieu_ngoai_vo_ly_bi_chan_422(api: TestClient, bad_ref: str):
+    invoice = _issue(api)
+    response = api.patch(_ref_url(invoice["id"]), headers=KEY, json={"external_invoice_id": bad_ref})
+    assert response.status_code == 422
+
+
+def test_ghi_nhan_tham_chieu_can_connector_key(api: TestClient):
+    invoice = _issue(api)
+    assert api.patch(_ref_url(invoice["id"]), json={"external_invoice_id": "INV-9"}).status_code == 401
+
+
+def test_ky_da_xuat_hoa_don_duoc_nhan_biet_qua_cot_tham_chieu(api: TestClient, ingest: Session):
+    """Vong idempotency kin: xuat hoa don -> ghi nhan -> goi lai dung ky -> backend tra ve ID cu.
+
+    Day la dieu connector B dung de quyet dinh `already_billed` thay vi tao hoa don doi.
+    """
+    payload = _billing_payload()
+    invoice = _issue(api)
+    api.patch(_ref_url(invoice["id"]), headers=KEY, json={"external_invoice_id": "INV-9"})
+
+    again = api.post("/api/ingest/billing", headers=KEY, json=payload)
+
+    assert again.status_code == 200, again.text
+    body = again.json()
+    assert body["id"] == invoice["id"]
+    assert body["external_invoice_id"] == "INV-9"
+    ingest.expire_all()
+    assert len(list(ingest.scalars(select(BilledInvoice)))) == 1

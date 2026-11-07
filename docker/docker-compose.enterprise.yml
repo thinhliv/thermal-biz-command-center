@@ -115,6 +115,22 @@ services:
       # dung de goi LEN backend - mot khoa cho moi chieu, lo mot chieu khong lo chieu kia.
       CONNECTOR_API_KEY: ${CONNECTOR_A_API_KEY:?CONNECTOR_A_API_KEY must be set in .env}
       SIMULATION_MODE: ${CONNECTOR_A_SIMULATION_MODE:-false}
+      # ERPNext khong co doctype "Maintenance Request" (do la cua Odoo). Phieu sua chua
+      # tai san la `Asset Repair`, va no BAT BUOC `asset` la Link toi Asset that cua ERPNext.
+      # Ten asset do nguoi van hanh khai bao o day - KHONG lay tu device_name cua alarm,
+      # vi ThingsBoard dat ten tuy y va mot alarm la co the ghi phieu vao tai san cua khach khac.
+      DEVICE_ASSET_MAP: ${CONNECTOR_A_DEVICE_ASSET_MAP:-}
+      ERPNEXT_COMPANY: ${ERPNEXT_COMPANY:-}
+      ERPNEXT_STORE_WAREHOUSE: ${ERPNEXT_STORE_WAREHOUSE:-}
+      ERPNEXT_ASSET_REPAIR_NAMING_SERIES: ${ERPNEXT_ASSET_REPAIR_NAMING_SERIES:-ACC-ASR-.YYYY.-}
+      REFRIGERANT_ITEM_CODE: ${REFRIGERANT_ITEM_CODE:-R404A-GAS-CYLINDER}
+      REFRIGERANT_RESERVE_QTY: ${REFRIGERANT_RESERVE_QTY:-2}
+      ALARM_COOLDOWN_SECONDS: ${CONNECTOR_A_COOLDOWN_SECONDS:-300}
+      # Cooldown phai song qua restart container: mat no thi mot con bao dang nhay
+      # se tao ra mot phieu Asset Repair moi sau moi lan container dung len.
+      CONNECTOR_STATE_DIR: /data
+    volumes:
+      - connector_a_state:/data
     ports:
       - "${CONNECTOR_A_PORT:-8081}:8081"
     networks:
@@ -176,6 +192,7 @@ volumes:
   erp_data:
   erp_sites:
   grafana_data:
+  connector_a_state:
 
 networks:
   default:

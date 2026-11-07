@@ -140,3 +140,34 @@ jobs:
           path: frontend/dist/
           if-no-files-found: error
           retention-days: 7
+
+  # connectors/tests chua bao gio duoc CI chay: job `backend` dat working-directory
+  # o backend/ nen pytest khong nhin thay connectors/. Do la ly do hai loi hong ca
+  # production (POST sang doctype ERPNext khong ton tai, va hoa don chi tinh phi dich vu
+  # chu khong tinh tien dien) lot qua duoc ma test van xanh - vi test chi chay
+  # SIMULATION_MODE, khong cham duong that. Job nay la vong bao ve cho duong that.
+  connectors:
+    name: Connectors (pytest, incl. live paths)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            connectors/thingsboard-to-erpnext/requirements.txt
+            connectors/ha-to-invoiceninja/requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r connectors/thingsboard-to-erpnext/requirements.txt
+          pip install -r connectors/ha-to-invoiceninja/requirements.txt
+          # TestClient cua Starlette can httpx; hai connector khong khai no vi prod khong dung.
+          pip install "pytest>=8.0.0" "httpx>=0.27.0"
+
+      - name: Run tests
+        run: pytest connectors/tests -q

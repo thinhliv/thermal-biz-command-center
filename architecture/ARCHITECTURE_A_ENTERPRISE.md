@@ -46,9 +46,9 @@ flowchart TD
    - Khi $COP < 3.2$ trong 30 phút liên tục (nghi ngờ thiếu gas lạnh hoặc bám bẩn dàn ngưng) HOẶC độ rung động cơ $> 4.5\,\text{mm/s}$:
    - **ThingsBoard Rule Engine** kích hoạt Alarm $\rightarrow$ Gửi Webhook sang `thingsboard-to-erpnext connector`.
    - Connector gọi REST API của **ERPNext** để:
-     - Tạo ngay một **Phiếu yêu cầu bảo trì (Maintenance Request)**.
-     - Tự động kiểm tra và khóa kho 2 bình gas lạnh R404A hoặc dầu bôi trơn máy nén trong module Kho của ERPNext.
-     - Gửi email/thông báo giao việc cho kỹ sư trưởng.
+     - Tạo ngay một **Phiếu sửa chữa tài sản (`Asset Repair`)** — ERPNext không có doctype `Maintenance Request` (đó là của Odoo). `Asset Repair` bắt buộc field `asset` là Link tới một Asset có thật, nên connector phải tra bảng ánh xạ `DEVICE_ASSET_MAP` (device ThingsBoard → Asset ERPNext) do người vận hành khai báo; thiết bị chưa có trong bảng thì bị từ chối (422) chứ không đoán bừa.
+     - Khai báo 2 bình gas lạnh R404A dự phòng ngay trong child table `stock_items` của phiếu (field `consumed_quantity` là kiểu chuỗi trong ERPNext). Không dùng `Stock Reservation Entry` riêng: `voucher_type` của doctype đó là Select chỉ chấp nhận `Sales Order`, nên không thể gắn vào một phiếu sửa chữa.
+     - *Chưa nối dây:* gửi email/thông báo giao việc cho kỹ sư trưởng. Hiện phiếu dừng ở trạng thái `Pending` để kỹ sư trưởng tự nhận việc trên ERPNext.
 3. **Hiển thị Hợp nhất trên Grafana:**
    - Grafana kết nối trực tiếp database của Thingsboard và ERPNext:
      - Khối trái: Doanh thu lưu kho & Chi phí tiền điện vận hành (lấy từ ERPNext).

@@ -22,7 +22,7 @@ flowchart TD
     subgraph StackA["HƯỚNG A: ENTERPRISE (Công nghiệp nặng & Chuỗi kho lạnh)"]
         TB["ThingsBoard CE 4.2 (IIoT SCADA)"]
         ERP["ERPNext v15 (ERP, Bảo trì, Kho vật tư)"]
-        ConnA["Connector A (Alarm -> Maintenance Request + Khóa kho R404A)"]
+        ConnA["Connector A (Alarm -> Asset Repair + Vật tư R404A)"]
         TB --> ConnA --> ERP
         ConnA -.->|Đẩy dữ liệu| API
     end
@@ -52,8 +52,8 @@ flowchart TD
 | **Backend API** | FastAPI, SQLAlchemy 2, Alembic, Pydantic v2 | `backend/` | RESTful API, WebSocket thời gian thực, xác thực JWT, RBAC 3 vai trò (BGD, Vận hành, Kế toán), tính toán điện TOU, HACCP compliance. |
 | **Frontend SPA** | React 18, Vite, TypeScript, Tailwind, Recharts | `frontend/` | Giao diện buồng lái điều hành (Overview, Thermal, Business, Alerts), chỉ báo độ trễ dữ liệu (`LiveBadge`), tự động reconnect WebSocket. |
 | **Multi-Platform** | Capacitor, PWA Service Worker, Kiosk Scripts | `frontend/android/`, `clients/` | Ứng dụng Android APK native, Progressive Web App (offline caching), và chế độ Edge/Chrome Kiosk toàn màn hình cho TV điều hành. |
-| **Connector A** | FastAPI Event Bridge | `connectors/thingsboard-to-erpnext/` | Bắt alarm IoT từ ThingsBoard, tạo `Maintenance Request` gán `asset`, tự động giữ kho gas R404A, chống lặp ticket bằng cooldown. |
-| **Connector B** | FastAPI Billing Bridge | `connectors/ha-to-invoiceninja/` | Đọc chỉ số công tơ, tính $\Delta kWh$, phân bổ chi phí theo 3 khung giờ EVN, xuất hóa đơn Invoice Ninja với cơ chế Dead-Letter Queue. |
+| **Connector A** | FastAPI Event Bridge | `connectors/thingsboard-to-erpnext/` | Bắt alarm IoT từ ThingsBoard, tạo `Asset Repair` (doctype thật của ERPNext v15) với `asset` tra từ bảng ánh xạ `DEVICE_ASSET_MAP`, khai báo vật tư gas R404A trong child table `stock_items`, chống lặp phiếu bằng cooldown lưu trên đĩa. |
+| **Connector B** | FastAPI Billing Bridge | `connectors/ha-to-invoiceninja/` | Đọc **chỉ số tích lũy** từ công tơ, giao backend tính $\Delta kWh$ và phân bổ 3 khung giờ EVN, dịch kết quả thành line items Invoice Ninja, rồi ghi ngược `external_invoice_id` về backend làm khóa idempotency bền vững. Kèm Dead-Letter Queue. |
 | **Grafana Dashboards** | Grafana Provisioning | `grafana/` | Cung cấp 3 dashboard độc lập (`app`, `enterprise`, `lightweight`) tối ưu cho màn hình TV Kiosk. |
 
 ---
@@ -134,10 +134,10 @@ Khởi chạy stack ứng dụng cốt lõi (FastAPI Backend + PostgreSQL + Graf
 Dự án duy trì bộ kiểm thử tự động toàn diện với tỷ lệ pass 100%:
 
 ```powershell
-# 1. Kiểm thử Backend (193 tests)
+# 1. Kiểm thử Backend (223 tests)
 .\.venv\Scripts\pytest backend\tests -q
 
-# 2. Kiểm thử Connectors & Bảo mật Ingest (17 tests)
+# 2. Kiểm thử Connectors & Bảo mật Ingest (69 tests)
 .\.venv\Scripts\pytest connectors\tests -q
 
 # 3. Kiểm thử Frontend Vitest (82 tests)
@@ -158,11 +158,11 @@ thermal-biz-command-center/
 ├── backend/                    # FastAPI Backend
 │   ├── alembic/                # Database migrations
 │   ├── app/                    # Models, Routers, Services (billing, thermal, finance, ingest)
-│   └── tests/                  # Pytest test suite (193 tests)
+│   └── tests/                  # Pytest test suite (223 tests)
 ├── connectors/                 # Event & Metering Bridges
-│   ├── thingsboard-to-erpnext/ # Connector A: ThingsBoard -> ERPNext Maintenance Request
-│   ├── ha-to-invoiceninja/     # Connector B: Home Assistant -> Invoice Ninja ΔkWh Billing
-│   └── tests/                  # Connector security test suite (17 tests)
+│   ├── thingsboard-to-erpnext/ # Connector A: ThingsBoard -> ERPNext Asset Repair
+│   ├── ha-to-invoiceninja/     # Connector B: HA -> Backend billing -> Invoice Ninja
+│   └── tests/                  # Connector test suite, gồm cả luồng thật (69 tests)
 ├── database/                   # Khởi tạo SQL & Seed scripts
 │   └── migrations/             # Tách riêng PostgreSQL và MariaDB dialects
 ├── docker/                     # Docker Compose cho các stack mở rộng (enterprise, lightweight)

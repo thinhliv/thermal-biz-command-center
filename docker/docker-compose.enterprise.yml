@@ -1,7 +1,8 @@
-version: '3.8'
-
-# HƯỚNG A: STACK CÔNG NGHIỆP TOÀN DIỆN
+# HUONG A: STACK CONG NGHIEP TOAN DIEN
 # ThingsBoard (IIoT) + ERPNext / DB + Grafana + Connector A
+#
+# Tat ca secret doc tu `.env` o thu muc goc repo. Khoi chay bang:
+#   docker compose --env-file .env -f docker/docker-compose.enterprise.yml up -d
 
 services:
   # 1. ThingsBoard Community Edition (IIoT Platform)
@@ -10,14 +11,14 @@ services:
     container_name: enterprise_thingsboard
     restart: unless-stopped
     ports:
-      - "8080:8080"
-      - "1883:1883"      # MQTT Port
-      - "5683:5683/udp"  # CoAP Port
+      - "${TB_PORT:-8080}:8080"
+      - "${TB_MQTT_PORT:-1883}:1883"        # MQTT
+      - "${TB_COAP_PORT:-5683}:5683/udp"    # CoAP
     environment:
       TB_QUEUE_TYPE: in-memory
-      SPRING_DATASOURCE_URL: jdbc:postgresql://tb_postgres:5432/thingsboard
-      SPRING_DATASOURCE_USERNAME: tb_user
-      SPRING_DATASOURCE_PASSWORD: tb_password_2026
+      SPRING_DATASOURCE_URL: jdbc:postgresql://tb_postgres:5432/${TB_DB_NAME:-thingsboard}
+      SPRING_DATASOURCE_USERNAME: ${TB_DB_USER:-tb_user}
+      SPRING_DATASOURCE_PASSWORD: ${TB_DB_PASSWORD:?TB_DB_PASSWORD must be set in .env}
     volumes:
       - tb_data:/data
       - tb_logs:/var/log/thingsboard
@@ -29,13 +30,13 @@ services:
     container_name: enterprise_tb_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: thingsboard
-      POSTGRES_USER: tb_user
-      POSTGRES_PASSWORD: tb_password_2026
+      POSTGRES_DB: ${TB_DB_NAME:-thingsboard}
+      POSTGRES_USER: ${TB_DB_USER:-tb_user}
+      POSTGRES_PASSWORD: ${TB_DB_PASSWORD:?TB_DB_PASSWORD must be set in .env}
     volumes:
       - tb_pg_data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "${TB_POSTGRES_PORT:-5433}:5432"
 
   # 2. ERPNext Database / Business Layer View
   erp_database:
@@ -43,15 +44,17 @@ services:
     container_name: enterprise_erp_mariadb
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: erp_root_password_2026
-      MYSQL_DATABASE: erpnext_db
-      MYSQL_USER: erp_user
-      MYSQL_PASSWORD: erp_password_2026
+      MYSQL_ROOT_PASSWORD: ${ERP_DB_ROOT_PASSWORD:?ERP_DB_ROOT_PASSWORD must be set in .env}
+      MYSQL_DATABASE: ${ERP_DB_NAME:-erpnext_db}
+      MYSQL_USER: ${ERP_DB_USER:-erp_user}
+      MYSQL_PASSWORD: ${ERP_DB_PASSWORD:?ERP_DB_PASSWORD must be set in .env}
     volumes:
       - erp_data:/var/lib/mysql
+      # CANH BAO: init.sql hien la cu phap PostgreSQL, se fail tren MariaDB.
+      # Se duoc tach thanh database/mariadb/*.sql o Dot 4.
       - ../database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     ports:
-      - "3306:3306"
+      - "${ERP_DB_PORT:-3306}:3306"
 
   # 3. Connector A: ThingsBoard Alarm to ERPNext Maintenance Bridge
   connector_a:
@@ -61,11 +64,13 @@ services:
     container_name: enterprise_connector_a
     restart: unless-stopped
     environment:
-      ERPNEXT_URL: http://erp_database:8000
-      ERPNEXT_API_KEY: mock_key
-      ERPNEXT_API_SECRET: mock_secret
+      ERPNEXT_URL: ${ERPNEXT_URL:?ERPNEXT_URL must be set in .env}
+      ERPNEXT_API_KEY: ${ERPNEXT_API_KEY:-}
+      ERPNEXT_API_SECRET: ${ERPNEXT_API_SECRET:-}
+      CONNECTOR_API_KEY: ${CONNECTOR_A_API_KEY:?CONNECTOR_A_API_KEY must be set in .env}
+      SIMULATION_MODE: ${CONNECTOR_A_SIMULATION_MODE:-false}
     ports:
-      - "8081:8081"
+      - "${CONNECTOR_A_PORT:-8081}:8081"
 
   # 4. Grafana Unified Executive Command Center
   grafana:
@@ -73,12 +78,18 @@ services:
     container_name: enterprise_grafana
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${GRAFANA_PORT:-3000}:3000"
     environment:
-      GF_SECURITY_ALLOW_EMBEDDING: "true"
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
-      GF_USERS_DEFAULT_THEME: "dark"
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
+      GF_SECURITY_ALLOW_EMBEDDING: ${GRAFANA_ALLOW_EMBEDDING:-false}
+      GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-false}
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_DEFAULT_THEME: dark
+      # datasources.yaml noi suy cac bien nay (Grafana ho tro $ENV_VAR trong provisioning)
+      TB_DB_PASSWORD: ${TB_DB_PASSWORD:?TB_DB_PASSWORD must be set in .env}
+      ERP_DB_PASSWORD: ${ERP_DB_PASSWORD:?ERP_DB_PASSWORD must be set in .env}
+      NINJA_DB_PASSWORD: ${NINJA_DB_PASSWORD:?NINJA_DB_PASSWORD must be set in .env}
     volumes:
       - grafana_data:/var/lib/grafana
       - ../grafana/provisioning:/etc/grafana/provisioning

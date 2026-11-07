@@ -13,7 +13,7 @@
 services:
   # 1. ThingsBoard Community Edition (IIoT Platform)
   thingsboard:
-    image: thingsboard/tb-postgres:latest
+    image: thingsboard/tb-node:latest
     container_name: enterprise_thingsboard
     restart: unless-stopped
     ports:
@@ -56,7 +56,24 @@ services:
       retries: 5
       start_period: 20s
 
-  # 2. ERPNext Database / Business Layer View
+  # 2. ERPNext Application & Database
+  erpnext:
+    image: frappe/erpnext:v15.20.0
+    container_name: enterprise_erpnext
+    restart: unless-stopped
+    ports:
+      - "${ERPNEXT_PORT:-8000}:8000"
+    environment:
+      DB_HOST: erp_database
+      DB_PORT: 3306
+      MYSQL_ROOT_PASSWORD: ${ERP_DB_ROOT_PASSWORD:?ERP_DB_ROOT_PASSWORD must be set in .env}
+      MARIADB_ROOT_PASSWORD: ${ERP_DB_ROOT_PASSWORD:?ERP_DB_ROOT_PASSWORD must be set in .env}
+    volumes:
+      - erp_sites:/home/frappe/frappe-bench/sites
+    depends_on:
+      erp_database:
+        condition: service_healthy
+
   erp_database:
     image: mariadb:10.11
     container_name: enterprise_erp_mariadb
@@ -157,6 +174,7 @@ volumes:
   tb_logs:
   tb_pg_data:
   erp_data:
+  erp_sites:
   grafana_data:
 
 networks:

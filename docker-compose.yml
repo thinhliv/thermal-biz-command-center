@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: thermal_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: thermal_biz_db
+      POSTGRES_USER: thermal_admin
+      POSTGRES_PASSWORD: thermal_secure_pass_2026
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: thermal_api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://thermal_admin:thermal_secure_pass_2026@db:5432/thermal_biz_db
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: thermal_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_USERS_DEFAULT_THEME=dark
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - db
+
+volumes:
+  pg_data:
+  grafana_data:

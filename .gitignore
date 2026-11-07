@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+.env
+__pycache__/
+*.pyc
+pg_data/
+grafana_data/
+.DS_Store
+*.log

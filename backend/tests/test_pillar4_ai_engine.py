@@ -4,8 +4,13 @@ Kiem chung:
   1. Thuat toan Peak-Shaving 24h dua tren quan tinh nhiet va bieu gia gio cao diem EVN.
   2. Uoc tinh tiet kiem chi phi dien (VND & %) va dam bao nguong an toan HACCP.
   3. Chan doan rung dong co khi theo tieu chuan ISO 10816-3 (Zone A, B, C, D).
-  4. Phat hien ro ri moi chat lanh R404A dua tren do doc suy giam COP (COP degradation slope).
+  4. Nguyen nhan su co suy ra tu ap suat phia thap, khong tu mot minh COP: COP thap chi la co hieu
+     canh bao, con "ro ri" chi duoc noi khi chen lech bay hoi that su vuot mien thiet ke.
   5. Bao mat cac endpoint /api/ai/* bang JWT.
+
+Nguyen tac dat test o day giong trong `test_diagnostics.py`: moi ap suat trong test deu tinh qua
+`saturation_pressure_bar` tu do chen lech nhiet do muon co, KHONG go so bar bang tay. Go tay thi
+test nay se chi dung voi R404A va am tham sai voi R134a.
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.database import SessionLocal
 from app.models import Equipment, TelemetrySample
 from app.services.ai_energy import (
+    COP_GAP_ALERT_PCT,
     HACCP_SAFETY_MARGIN_C,
     ISO_ZONE_A_MAX,
     ISO_ZONE_B_MAX,
@@ -34,7 +40,16 @@ from app.services.ai_energy import (
     calculate_peak_shaving_plan,
     diagnose_predictive_maintenance,
 )
+from app.services.diagnostics import APPROACH_LOW_SIDE_FAULT_K, FaultCode
+from app.services.refrigerant import saturation_pressure_bar
 from app.timeutil import utcnow
+
+
+def _pressure_for_approach(label: str, setpoint_c: float, approach_k: float) -> float:
+    """Ap suat phia thap tuong ung voi mot do chen lech bay hoi cho truoc."""
+    pressure = saturation_pressure_bar(label, setpoint_c - approach_k)
+    assert pressure is not None and pressure > 0
+    return pressure
 
 
 def test_calculate_peak_shaving_schedule_and_savings(seeded: Session):
@@ -213,12 +228,23 @@ def test_predictive_maintenance_iso10816_zones(seeded_client: TestClient, tokens
 
 
 def test_predictive_maintenance_cop_degradation_and_leak_detection(seeded_client: TestClient, tokens: dict[str, str]):
-    """Gia lap chuoi COP suy giam lien tuc de kiem chung AI phat hien ro ri R404A."""
+    """Chuoi COP suy giam KEM ap suat phia thap tut sau: day moi la chu ky ro ri that.
+
+    Test cu chi ha COP roi doi ket luan "ro ri". Do la dung cai loi ma chan doan phia thap sinh ra
+    de sua: COP thap khong phai bang chung thieu gas, vi thieu gas keo T_evap xuong va se in dau
+    vao ap suat. Nen o day phai gia lap ca hai nua cua chu ky.
+    """
     headers = {"Authorization": f"Bearer {tokens['BGD']}"}
     session: Session = SessionLocal()
     try:
         eq = session.scalars(select(Equipment).where(Equipment.code == "KHO_DONG_01")).first()
         assert eq is not None
+        assert eq.refrigerant == "R404A" and eq.setpoint_c == -25.0
+
+        # Chenh lech bay hoi vuot nguong su co: dan bay hoi phai keo xuong -45 C moi tai duoc
+        # kho -25 C. Ap suat tinh qua CoolProp, khong go tay.
+        faulted_approach = APPROACH_LOW_SIDE_FAULT_K + 5.0
+        pressure = _pressure_for_approach("R404A", eq.setpoint_c, faulted_approach)
 
         now = utcnow()
         # Tao chuoi 10 mau tuong lai gan voi COP giam dan tu 3.2 xuong 2.12 (suy thoai nghiem trong)
@@ -227,6 +253,7 @@ def test_predictive_maintenance_cop_degradation_and_leak_detection(seeded_client
                 equipment_id=eq.id,
                 ts=now + timedelta(minutes=i + 1),
                 temperature_c=-19.0,
+                pressure_bar=pressure,
                 vibration_mm_s=1.5,
                 cop=3.2 - (i * 0.12),
                 status="RUNNING",
@@ -241,16 +268,175 @@ def test_predictive_maintenance_cop_degradation_and_leak_detection(seeded_client
     diag = res.json()[0]
 
     assert diag["refrigerant_leak_suspected"] is True
+    assert diag["cop_degraded"] is True
     assert diag["cop_slope"] < 0
     assert any("R404A" in action for action in diag["recommended_actions"])
-    # COP bao cao la gia tri do gan nhat (2.12), khong phai design_cop 3.6 cua ho so thiet bi
+    # COP bao cao la gia tri do gan nhat (2.12), khong phai design_cop 3.8 cua ho so thiet bi
     assert diag["cop_current"] == 2.12
-    assert diag["leak_severity"] == "CRITICAL"
+    assert diag["cop_severity"] == "CRITICAL"
     assert diag["cop_slope_unit"] == "COP per hour"
     assert diag["rul_basis"] == "COP_TREND"
     # RUL phai suy ra tu xu huong, khong phai con so 90 ngay mac dinh cu
     assert diag["estimated_rul_days"] is not None
     assert diag["estimated_rul_days"] != 90
+
+    low_side = diag["low_side"]
+    assert low_side["status"] == FaultCode.EVAPORATOR_FROST.value
+    assert low_side["approach_k"] == pytest.approx(faulted_approach, abs=0.5)
+    # Mot mau khong tach duoc dong bang khoi thieu gas - bao cao phai noi thang dieu do,
+    # khong duoc chon mot trong hai roi trinh bay nhu da ket luan.
+    assert low_side["ambiguity"] is not None
+    live = {
+        f["code"] for f in low_side["findings"] if f["confidence"] != "RULED_OUT"
+    }
+    assert FaultCode.UNDERCHARGE.value in live
+    assert FaultCode.EVAPORATOR_FROST.value in live
+
+
+def test_cop_thap_ma_phia_thap_van_khoe_thi_khong_duoc_khang_dinh_ro_ri(seeded: Session):
+    """Dung tinh huong ma chan doan phia thap sinh ra de sua.
+
+    COP sut 22% so voi thiet ke nhung chen lech bay hoi van nam trong mien thiet ke. Thieu moi
+    chat thi khoi luong gas khong doi duoc de giu chen lech dep nhu vay - nen phia thap KHONG phai
+    thu pham. Logic cu bao "ro ri R404A - can nap gas" cho ca truong hop nay, tuc la bao tho di
+    nap mot he khong thieu gas, trong khi nguyen nhan that nam o dan nong hoac may nen.
+    """
+    eq = seeded.scalars(select(Equipment).where(Equipment.code == "CAP_DONG_01")).first()
+    assert eq is not None and eq.setpoint_c is not None and eq.refrigerant == "R404A"
+
+    healthy_approach = 7.0
+    pressure = _pressure_for_approach(eq.refrigerant, eq.setpoint_c, healthy_approach)
+    degraded_cop = round(eq.design_cop * 0.78, 3)
+
+    base_ts = utcnow() + timedelta(hours=4)
+    for i in range(6):
+        seeded.add(TelemetrySample(
+            equipment_id=eq.id,
+            ts=base_ts + timedelta(minutes=i),
+            temperature_c=eq.setpoint_c + 1.0,
+            pressure_bar=pressure,
+            power_kw=95.0,
+            cooling_capacity_kw=round(95.0 * degraded_cop, 2),
+            cop=degraded_cop,
+            vibration_mm_s=1.6,
+            status="RUNNING",
+        ))
+    seeded.commit()
+
+    diag = diagnose_predictive_maintenance(seeded, equipment_id=eq.id)[0]
+
+    # Co hieu canh bao COP van phai giu nguyen - mat canh bao thi con nguy hiem hon ca bao nham.
+    assert diag["cop_degraded"] is True
+    assert diag["cop_current"] == pytest.approx(degraded_cop, abs=0.005)
+    # Nhung KHONG duoc dat ten nguyen nhan la ro ri.
+    assert diag["refrigerant_leak_suspected"] is False
+    assert diag["low_side"]["status"] == FaultCode.HEALTHY.value
+    assert not any("nạp gas" in action for action in diag["recommended_actions"])
+
+    live = [
+        f for f in diag["low_side"]["findings"] if f["confidence"] != "RULED_OUT"
+    ]
+    assert {f["code"] for f in live} == {
+        FaultCode.CONDENSER_FOULING.value,
+        FaultCode.COMPRESSOR_WEAR.value,
+    }
+    # Hai nguyen nhan phia cao khong tach duoc khi chua co nhiet do ngung tu: phai mang ambiguity.
+    assert "KHONG tach duoc" in diag["low_side"]["ambiguity"]
+
+
+def test_thieu_ap_suat_phia_thap_thi_bao_khong_ket_luan_duoc_thay_vi_doan(seeded: Session):
+    """Gateway khong gui ap suat la tinh huong that ngoai hien truong, khong phai ca hiem.
+
+    Khi do bao cao van phai canh bao COP sut, nhung phai TU CHOI dat ten nguyen nhan va phai noi
+    ro phep do nao mo khoa duoc. Doan "ro ri" luc nay la tao ra mot lenh sua chua sai.
+
+    Dung thiet bi rieng khong co lich su seed: neu dung kho co san thi `probe` se nhay ve mot mau
+    seed CO ap suat va test am tham kiem tra sai nhanh.
+    """
+    eq = Equipment(
+        code="KHO_KHONG_CO_CAM_BIEN_AP_SUAT",
+        name="Kho không có cảm biến áp suất",
+        kind="DEEP_FREEZER",
+        location="Nhà C",
+        refrigerant="R404A",
+        rated_power_kw=100.0,
+        haccp_limit_c=-18.0,
+        design_cop=3.6,
+        setpoint_c=-22.0,
+        is_active=True,
+    )
+    seeded.add(eq)
+    seeded.flush()
+
+    base_ts = utcnow() + timedelta(hours=5)
+    for i in range(6):
+        seeded.add(TelemetrySample(
+            equipment_id=eq.id,
+            ts=base_ts + timedelta(minutes=i),
+            temperature_c=-19.0,
+            cop=2.2,
+            vibration_mm_s=1.4,
+            status="RUNNING",
+        ))
+    seeded.commit()
+
+    diag = diagnose_predictive_maintenance(seeded, equipment_id=eq.id)[0]
+
+    assert diag["cop_degraded"] is True
+    assert diag["refrigerant_leak_suspected"] is False
+    assert diag["low_side"]["status"] == FaultCode.INSUFFICIENT_DATA.value
+    assert diag["low_side"]["approach_k"] is None
+    assert diag["low_side"]["findings"] == []
+
+    actions = diag["recommended_actions"]
+    assert any("áp suất phía thấp" in a for a in actions)
+    # Phai chan dung hanh dong sai ma ket luan cu gay ra.
+    assert any("KHÔNG nạp" in a and "R404A" in a for a in actions)
+    assert not any("rò rỉ" in a for a in actions)
+    # "Khong co canh bao" khong duoc doc thanh "thiet bi khoe": ket luan thieu du lieu phai noi
+    # thang dieu do trong ambiguity.
+    assert "KHONG phai la ket luan thiet bi dang binh thuong" in diag["low_side"]["ambiguity"]
+
+
+def test_nguong_canh_bao_cop_la_tuong_doi_so_voi_thiet_ke_khong_phai_tuyet_doi(seeded: Session):
+    """Mot nguong COP tuyet doi khong phat hien duoc su sut COP cua ham cap dong -35 C.
+
+    Ham cap dong chay COP thiet ke 3.1, kho mat +2 C chay 4.2. Sut 25% voi ham cap dong la 2.33 -
+    van tren moc 2.5 cua nguong tuyet doi, tuc la nguong cu bo lot. Ngong canh bao phai do theo
+    ty le voi thiet ke cua chinh thiet bi do.
+    """
+    assert COP_GAP_ALERT_PCT < 0
+    eq = seeded.scalars(select(Equipment).where(Equipment.code == "CAP_DONG_01")).first()
+    assert eq is not None and eq.design_cop is not None
+
+    degraded_cop = round(eq.design_cop * 0.75, 3)
+    gap_pct = round((degraded_cop - eq.design_cop) / eq.design_cop * 100, 2)
+    assert gap_pct <= COP_GAP_ALERT_PCT
+
+    pressure = _pressure_for_approach(eq.refrigerant, eq.setpoint_c, 7.0)
+    base_ts = utcnow() + timedelta(hours=6)
+    for i in range(6):
+        seeded.add(TelemetrySample(
+            equipment_id=eq.id,
+            ts=base_ts + timedelta(minutes=i),
+            temperature_c=eq.setpoint_c + 1.0,
+            pressure_bar=pressure,
+            cop=degraded_cop,
+            vibration_mm_s=1.5,
+            status="RUNNING",
+        ))
+    seeded.commit()
+
+    diag = diagnose_predictive_maintenance(seeded, equipment_id=eq.id)[0]
+
+    assert diag["cop_gap_pct"] == pytest.approx(gap_pct, abs=0.05)
+    assert diag["cop_gap_alert_pct"] == COP_GAP_ALERT_PCT
+    assert diag["low_side"]["status"] == FaultCode.HEALTHY.value
+    live = [f for f in diag["low_side"]["findings"] if f["confidence"] != "RULED_OUT"]
+    assert {f["code"] for f in live} == {
+        FaultCode.CONDENSER_FOULING.value,
+        FaultCode.COMPRESSOR_WEAR.value,
+    }
 
 
 def test_predictive_maintenance_khong_bia_so_lieu_khi_cam_bien_im_lang(seeded: Session):
@@ -335,7 +521,10 @@ def test_predictive_maintenance_lo_hoi_khong_bi_chan_doan_ro_ri_moi_chat(seeded:
     diag = diagnose_predictive_maintenance(seeded, equipment_id=boiler.id)[0]
 
     assert diag["refrigerant_leak_suspected"] is False
-    assert diag["leak_severity"] == "NONE"
+    assert diag["cop_severity"] == "NONE"
+    assert diag["cop_degraded"] is False
+    # Lo hoi khong co chu ky lanh nen khong co ket luan phia dan bay hoi.
+    assert diag["low_side"] is None
     assert diag["cop_slope"] is None
     assert diag["rul_basis"] == "NOT_MODELLED"
     assert not any("rò rỉ" in action for action in diag["recommended_actions"])
@@ -349,6 +538,11 @@ def test_predictive_maintenance_neu_dung_ten_moi_chat_cua_thiet_bi(seeded_client
         eq = session.scalars(select(Equipment).where(Equipment.code == "CHILLER_01")).first()
         assert eq is not None
         assert eq.refrigerant == "R134a"
+        assert eq.setpoint_c == 7.0
+
+        # R134a co ap suat bay hoi khac han R404A o cung nhiet do: neu test go so bar bang tay
+        # thi no se "pass" vi trung R404A ma am tham sai voi R134a.
+        pressure = _pressure_for_approach("R134a", eq.setpoint_c, APPROACH_LOW_SIDE_FAULT_K + 6.0)
 
         now = utcnow()
         for i in range(6):
@@ -356,6 +550,7 @@ def test_predictive_maintenance_neu_dung_ten_moi_chat_cua_thiet_bi(seeded_client
                 equipment_id=eq.id,
                 ts=now + timedelta(hours=3, minutes=i),
                 temperature_c=4.0,
+                pressure_bar=pressure,
                 vibration_mm_s=1.1,
                 cop=2.2,
                 status="RUNNING",

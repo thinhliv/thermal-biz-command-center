@@ -15,6 +15,12 @@
    - Do rung co khi theo tieu chuan ISO 10816-3 (Zone A/B/C/D).
    - Do doc suy giam COP hoi quy theo THOI GIAN THAT (gio), khong theo chi so mau: mau cach nhau
      15 phut ma tinh nhu cach nhau 1 gio thi toc do suy thoai bi thoi phong gap 4 lan.
+   - Nguyen nhan su co do `services.diagnostics` ket luan tu ap suat phia thap, KHONG do module nay
+     dat ten. Cu thay COP thap la bao "ro ri moi chat - can nap gas": dung cho ca truong hop chen
+     lech bay hoi van nam trong mien thiet ke (tuc phia thap dang khoe), va dua tho sua chua di
+     nap mot he khong thieu gas. Nay COP thap chi la CO HIEU canh bao; con nguyen nhan thi noi
+     dung den muc du lieu cho phep, kem `ambiguity` noi ro con mo ho o dau va phep do nao giai
+     duoc. Thieu ap suat phia thi bao thang la khong ket luan duoc, khong doan.
    - Thieu so lieu thi bao NO_DATA / NO_VIBRATION_DATA. KHONG dien mot gia tri "hop ly" thay cho
      cam bien: mot con so trung binh nam trong ma nguon nhin giong het mot phep do va se duoc
      tin nhu the (cu: `latest.vibration_mm_s or 1.2`, `latest.cop or design_cop or 3.2`,
@@ -32,12 +38,14 @@ from sqlalchemy.orm import Session
 from ..models import (
     REFRIGERATION_KINDS,
     Equipment,
+    EquipmentStatus,
     TariffBand,
     TariffBandCode,
     TelemetrySample,
 )
 from ..timeutil import utctoday, utcnow
-from . import billing
+from . import billing, thermal
+from .diagnostics import Confidence, FaultCode, diagnose_low_side
 
 # Nguong rung ISO 10816-3 (mm/s)
 ISO_ZONE_A_MAX = 1.4  # Tuyen hao
@@ -74,6 +82,35 @@ COP_CRITICAL_ABSOLUTE = 2.3
 COP_LEAK_SLOPE_PER_DAY = -0.05  # sut qua 0.05 COP/ngay la suy thoai that su
 MIN_SAMPLES_FOR_TREND = 5
 TREND_SAMPLE_LIMIT = 50
+
+#: COP thap hon thiet ke bao nhieu % thi goi la bat thuong, de hoi `diagnostics` tim nguyen nhan
+#: o phia cao. NGUONG NAY LA GIA THIET KY SU CHON, khong phai so lieu do - no phai nam trong
+#: `assumptions` de nguoi doc bao cao biet con so nao la gia thiet.
+#:
+#: Dat -10% vi may khoe van chay duoi COP thiet ke (ton that that, khong phai su co) nen dai
+#: scatter binh thuong khong sat 0; dat nguong qua gan 0 thi moi lan nhiet do kho troi mot chut
+#: cung thanh "bat thuong". Dung nguong TUYET DOI (COP_LEAK_ABSOLUTE) cho viec nay thi sai:
+#: ham cap dong -35 C va kho mat +2 C khong the cung mot moc COP.
+COP_GAP_ALERT_PCT = -10.0
+
+#: Nhan tieng Viet cho ma su co, dat o lop trinh bay. `diagnostics` giu ma nguyen trang de API
+#: on dinh; chu hien ra cho nguoi van hanh doc thi doi o day.
+FAULT_LABELS = {
+    FaultCode.UNDERCHARGE: "Thiếu môi chất lạnh",
+    FaultCode.EVAPORATOR_FROST: "Dàn bay hơi đóng băng",
+    FaultCode.CONDENSER_FOULING: "Dàn nóng bẩn",
+    FaultCode.COMPRESSOR_WEAR: "Máy nén mòn",
+    FaultCode.NO_COOLING_CAPABILITY: "Mất khả năng làm lạnh",
+    FaultCode.HEALTHY: "Phía thấp bình thường",
+    FaultCode.INSUFFICIENT_DATA: "Không đủ dữ liệu",
+}
+
+CONFIDENCE_LABELS = {
+    Confidence.CONFIRMED: "đã xác nhận",
+    Confidence.LIKELY: "nhiều khả năng",
+    Confidence.POSSIBLE: "có thể",
+    Confidence.RULED_OUT: "đã loại trừ",
+}
 
 
 class PeakShavingConfigError(ValueError):
@@ -364,6 +401,34 @@ def _most_recent_value(
     return None, None
 
 
+def _low_side_payload(low_side: Any) -> Optional[Dict[str, Any]]:
+    """Bien ket qua chan doan phia thap thanh JSON, giu nguyen `ambiguity` va `assumptions`.
+
+    `ambiguity` khong duoc bo di khi serialize: no la phan noi thang cho nguoi doc biet ket luan
+    nay DUNG DUOC DEN DAU. Mot bao cao chi co ket luan ma khong co phan mo ho thi trong giong
+    het mot bao cao chac chan, va do chinh la loi ma module chan doan sinh ra de sua.
+    """
+    if low_side is None:
+        return None
+    return {
+        "status": low_side.status.value,
+        "evaporating_c": low_side.evaporating_c,
+        "approach_k": low_side.approach_k,
+        "findings": [
+            {
+                "code": f.code.value,
+                "confidence": f.confidence.value,
+                "label": FAULT_LABELS[f.code],
+                "evidence": f.evidence,
+                "remedy": f.remedy or None,
+            }
+            for f in low_side.findings
+        ],
+        "ambiguity": low_side.ambiguity,
+        "assumptions": dict(low_side.assumptions),
+    }
+
+
 def diagnose_predictive_maintenance(
     session: Session,
     equipment_id: Optional[int] = None,
@@ -438,42 +503,94 @@ def diagnose_predictive_maintenance(
             if hours[-1] > 0:
                 cop_slope_per_hour = _linear_slope(hours, [value for _, value in cop_points])
 
-        leak_detected = False
-        leak_severity = "NONE"
+        # 3. Chan doan phia dan bay hoi tu ap suat thap do duoc.
+        #
+        # Ap suat va COP phai lay tu CUNG mot mau. Ghep COP luc 10h voi ap suat luc 6h roi goi do
+        # la mot trang thai van hanh thi moi ket luan rut ra deu vo nghia: hai dai luong do phai
+        # mo ta cung mot che do chay.
+        probe = next((s for s in samples if s.pressure_bar is not None), None)
+        gap_pct = thermal.assess_health(eq, probe).cop_gap_pct if probe is not None else None
+
+        low_side = None
+        if eq.is_refrigeration:
+            # Lo hoi khong co chu ky lanh: refrigerant NULL va COP NULL, ap nguon chan doan nay
+            # vao lo hoi la sai dai luong (lo hoi danh gia bang hieu suat eta).
+            low_side = diagnose_low_side(
+                refrigerant_label=eq.refrigerant,
+                setpoint_c=eq.setpoint_c,
+                pressure_bar=probe.pressure_bar if probe is not None else None,
+                measured_cop=probe.cop if probe is not None else None,
+                cop_anomalously_low=gap_pct is not None and gap_pct <= COP_GAP_ALERT_PCT,
+                is_defrosting=(
+                    probe is not None and probe.status == EquipmentStatus.DEFROST.value
+                ),
+            )
+
+        # "Nghi ngo ro ri" chi dung khi vat ly phia thap ung ho. COP thap don thuan KHONG phai
+        # bang chung thieu gas: thieu gas keo T_evap xuong, nen do chen lech bay hoi van nam
+        # trong mien thiet ke thi nguyen nhan khong the o phia thap.
+        leak_detected = low_side is not None and any(
+            f.code is FaultCode.UNDERCHARGE and f.confidence is not Confidence.RULED_OUT
+            for f in low_side.findings
+        )
+
+        cop_degraded = False
+        cop_severity = "NONE"
         rul_days: Optional[float] = None
         rul_basis = "NOT_MODELLED"
 
-        # Lo hoi danh gia bang hieu suat eta, khong co COP: khong duoc ap nguon ro ri moi chat.
         if eq.is_refrigeration and cop is not None:
-            degrading = cop < COP_LEAK_ABSOLUTE or (
+            cop_degraded = cop < COP_LEAK_ABSOLUTE or (
                 cop_slope_per_hour is not None
                 and cop_slope_per_hour * 24.0 < COP_LEAK_SLOPE_PER_DAY
             )
-            if degrading:
-                leak_detected = True
-                leak_severity = "CRITICAL" if cop < COP_CRITICAL_ABSOLUTE else "WARNING"
+            if cop_degraded:
+                cop_severity = "CRITICAL" if cop < COP_CRITICAL_ABSOLUTE else "WARNING"
                 if cop_slope_per_hour is not None and cop_slope_per_hour < 0:
                     hours_to_failure = (cop - COP_FAILURE_THRESHOLD) / abs(cop_slope_per_hour)
                     rul_days = round(max(0.0, hours_to_failure) / 24.0, 1)
                     rul_basis = "COP_TREND"
 
-        # 3. Tong hop de xuat bao tri
+        # 4. Tong hop de xuat bao tri
         actions: List[str] = []
         if vibe_health in ("WARNING", "CRITICAL", "NO_VIBRATION_DATA"):
             actions.append(vibe_recommendation)
-        if leak_detected:
-            # Ten moi chat lay tu ho so thiet bi: CHILLER_01 chay R134a ma bao "ro ri R404A"
-            # la bao cao sai va dua tho sua chua di tim dung loai gas.
-            refrigerant = eq.refrigerant or "môi chất lạnh"
+        if cop_degraded:
             slope_text = (
                 f"độ dốc {cop_slope_per_hour:.4f}/giờ"
                 if cop_slope_per_hour is not None
                 else "COP thấp bất thường"
             )
             actions.append(
-                f"Phát hiện suy giảm hệ số COP ({slope_text}). "
-                f"Khả năng cao rò rỉ {refrigerant} - Cần nạp gas và rà soát van tiết lưu"
+                f"Suy giảm hệ số COP ({slope_text}) - mức {cop_severity}. "
+                "Nguyên nhân được thu hẹp ở các dòng bên dưới, không suy ra từ một mình COP."
             )
+        if low_side is not None:
+            refrigerant = eq.refrigerant or "môi chất lạnh"
+            if low_side.status is FaultCode.INSUFFICIENT_DATA:
+                # Van giu canh bao COP sut o tren, nhung TU CHOI dat ten nguyen nhan. Day la diem
+                # khac cot loi so voi logic cu: cu thay COP thap la keu "ro ri" va bao nap gas,
+                # dua tho sua chua di nap mot he khong thieu gas.
+                actions.append(
+                    f"Chưa kết luận được nguyên nhân - thiếu số đo áp suất phía thấp. "
+                    f"KHÔNG nạp {refrigerant} trước khi đo: nạp vào hệ không thiếu gas vừa mất "
+                    "tiền môi chất vừa không sửa được bệnh, còn làm sai lệch lần chẩn đoán sau."
+                )
+            else:
+                for finding in low_side.findings:
+                    if finding.confidence is Confidence.RULED_OUT:
+                        continue
+                    label = FAULT_LABELS[finding.code]
+                    if finding.code is FaultCode.UNDERCHARGE and eq.refrigerant:
+                        # Ten moi chat lay tu ho so thiet bi: CHILLER_01 chay R134a ma bao
+                        # "thieu R404A" la bao cao sai va dua tho sua chua di tim dung loai gas.
+                        label = f"{label} ({eq.refrigerant})"
+                    actions.append(
+                        f"{label} - {CONFIDENCE_LABELS[finding.confidence]}: {finding.evidence}"
+                        + (f" Việc cần làm: {finding.remedy}" if finding.remedy else "")
+                    )
+                if low_side.ambiguity:
+                    actions.append(f"Còn mơ hồ: {low_side.ambiguity}")
         if rul_days is not None and rul_days <= 1.0:
             actions.append(
                 f"Theo xu hướng hiện tại, COP sẽ chạm ngưỡng hỏng {COP_FAILURE_THRESHOLD} "
@@ -504,8 +621,18 @@ def diagnose_predictive_maintenance(
             "cop_slope_per_day": (
                 round(cop_slope_per_hour * 24.0, 4) if cop_slope_per_hour is not None else None
             ),
+            "cop_degraded": cop_degraded,
+            "cop_severity": cop_severity,
+            #: Do lech COP cua MAU DUNG DE CHAN DOAN (co ap suat), khong phai cua `cop_current`.
+            #: Hai mau nay co the khac nhau; dung lan khi doi chieu voi `low_side`.
+            "cop_gap_pct": gap_pct,
+            #: Gia thiet ky su chon, tra ve kem de nguoi doc biet con so nao la gia thiet.
+            "cop_gap_alert_pct": COP_GAP_ALERT_PCT,
+            #: Chi True khi vat ly phia thap ung ho thieu moi chat. COP thap don thuan khong du:
+            #: thieu gas keo T_evap xuong, nen chen lech bay hoi con trong mien thiet ke thi
+            #: nguyen nhan khong the nam o phia thap.
             "refrigerant_leak_suspected": leak_detected,
-            "leak_severity": leak_severity,
+            "low_side": _low_side_payload(low_side),
             "estimated_rul_days": rul_days,
             "rul_basis": rul_basis,
             "recommended_actions": actions,

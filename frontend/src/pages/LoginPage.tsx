@@ -5,11 +5,14 @@ import { homePath, ROLE_HINTS, ROLE_LABELS } from '../lib/scopes';
 import { describeAuthError, useAuth } from '../store/auth';
 import type { Role } from '../types/api';
 
-const DEMO_ACCOUNTS: Array<{ username: string; role: Role }> = [
-  { username: 'bgd', role: 'BGD' },
-  { username: 'vanhanh', role: 'VANHANH' },
-  { username: 'ketoan', role: 'KETOAN' },
-];
+/**
+ * Suy ra từ `ROLE_LABELS` thay vì liệt kê tay: mọi vai trò có nhãn đều là vai trò đã được
+ * seed. Quy ước username = tên vai viết thường khớp với `DEMO_USERS` trong `backend/app/seed.py`
+ * và bị khoá bởi `test_seed_du_moi_vai_tro_trong_role_enum`.
+ */
+const DEMO_ACCOUNTS: Array<{ username: string; role: Role }> = (Object.keys(ROLE_LABELS) as Role[]).map(
+  (role) => ({ username: role.toLowerCase(), role }),
+);
 
 export function LoginPage() {
   const { status, user, login } = useAuth();
@@ -107,9 +110,9 @@ export function LoginPage() {
 
         <div className="mt-4 rounded-xl border border-slate-800 bg-[#0d1220] p-3">
           <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-            Ba vai trò — quyền khác nhau
+            {DEMO_ACCOUNTS.length} vai trò — quyền khác nhau
           </div>
-          <ul className="space-y-1.5">
+          <ul className="max-h-60 space-y-1.5 overflow-y-auto pr-1">
             {DEMO_ACCOUNTS.map((account) => (
               <li key={account.username} className="flex items-start gap-2 text-[11px]">
                 <button

@@ -237,4 +237,64 @@ class HealthResponse(BaseModel):
     backend: Literal["sqlite", "postgres"]
 
 
+# --------------------------------------------------------------------------- #
+# Weather & Weather Normalization (A4 / IPMVP)
+# --------------------------------------------------------------------------- #
+class OutdoorWeatherSampleCreate(BaseModel):
+    site_code: str = Field(min_length=1, max_length=32)
+    ts: datetime
+    ambient_temperature_c: float = Field(ge=-40.0, le=65.0)
+    relative_humidity_pct: float | None = Field(default=None, ge=0.0, le=100.0)
+    source: str = Field(default="ON_SITE_SENSOR", max_length=64)
+    station_id: str | None = Field(default=None, max_length=64)
+    is_measured: bool = True
+
+
+class OutdoorWeatherSamplePublic(ORMModel):
+    id: int
+    site_id: int
+    site_code: str
+    ts: datetime
+    ambient_temperature_c: float
+    relative_humidity_pct: float | None
+    source: str
+    station_id: str | None
+    is_measured: bool
+
+
+class WeatherNormalizationRequest(BaseModel):
+    site_code: str = Field(min_length=1, max_length=32)
+    baseline_days: int = Field(default=30, ge=5, le=365)
+    reporting_days: int = Field(default=30, ge=5, le=365)
+    base_temp_c: float = Field(default=18.3, ge=-20.0, le=35.0)
+    baseline_cdd: float = Field(ge=0.0)
+    reporting_cdd: float = Field(ge=0.0)
+    baseline_actual_kwh: float = Field(gt=0.0)
+    reporting_actual_kwh: float = Field(gt=0.0)
+    baseline_daily_data: list[tuple[float, float]] = Field(
+        description="Danh sach cac diem (daily_cdd, daily_kwh) trong ky co so de hoi quy"
+    )
+
+
+class WeatherNormalizationResultPublic(BaseModel):
+    site_code: str
+    baseline_days: int
+    reporting_days: int
+    base_temp_c: float
+    baseline_cdd: float
+    reporting_cdd: float
+    baseline_actual_kwh: float
+    reporting_actual_kwh: float
+    adjusted_baseline_kwh: float
+    normalized_savings_kwh: float
+    normalized_savings_pct: float
+    weather_effect_kwh: float
+    unadjusted_savings_kwh: float
+    model_r_squared: float
+    model_cv_rmse_pct: float
+    is_savings_statistically_valid: bool
+    explanation: str
+    assumptions: dict[str, Any]
+
+
 TelemetryIngestResult.model_rebuild()

@@ -688,6 +688,48 @@ class Site(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
     sync_batches: Mapped[list["SyncBatch"]] = relationship(back_populates="site")
+    weather_samples: Mapped[list["OutdoorWeatherSample"]] = relationship(
+        back_populates="site", cascade="all, delete-orphan"
+    )
+
+
+class OutdoorWeatherSample(Base):
+    """Du lieu khi tuong / nhiet do moi truong ngoai troi theo tung co so (Site).
+
+    Theo tieu chuan IPMVP (EVO 10000-1:2012) va nguyen ly nhiet dong hoc:
+    - Nhiet do moi truong ngoai troi (outdoor ambient dry-bulb temperature) la bien doc lap
+      chinh quyet dinh phu tai truyen nhiet qua vo kho va ap suat ngung tu P_k cua he thong.
+    - KHONG DUOC dung nhiet do buong / san pham (temperature_c trong TelemetrySample) lam proxy
+      cho moi truong vi day la hai dai luong hoan toan khac nhau ve ban chat vat ly.
+    - Thieu so lieu khi tuong thi he thong phai bao NO_WEATHER_DATA, khong duoc tu bia so lieu.
+    """
+
+    __tablename__ = "outdoor_weather_samples"
+
+    id: Mapped[int] = mapped_column(BigIntPK, primary_key=True, autoincrement=True)
+    site_id: Mapped[int] = mapped_column(
+        ForeignKey("sites.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    site_code: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    ts: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow, index=True)
+
+    #: Nhiet do bau kho ngoai troi (dry-bulb temperature, deg C)
+    ambient_temperature_c: Mapped[float] = mapped_column(Float, nullable=False)
+    #: Do am tuong doi ngoai troi (%, 0 - 100)
+    relative_humidity_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    #: Nguon du lieu: ON_SITE_SENSOR / METEOROLOGICAL_STATION / OPEN_METEO / SIMULATED_STATION
+    source: Mapped[str] = mapped_column(String(64), nullable=False, default="ON_SITE_SENSOR")
+    #: Ma tram do (VD: VVTS - Tan Son Nhat, VVNB - Noi Bai, hoac sensor serial)
+    station_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    #: True = du lieu do thuc te tu cam bien / tram khi tuong hop chuan
+    is_measured: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    site: Mapped["Site"] = relationship(back_populates="weather_samples")
+
+    __table_args__ = (
+        UniqueConstraint("site_id", "ts", name="uq_outdoor_weather_site_ts"),
+        Index("ix_outdoor_weather_site_ts", "site_id", "ts"),
+    )
 
 
 class SyncBatch(Base):

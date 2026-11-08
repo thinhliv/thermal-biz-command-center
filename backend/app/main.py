@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from .config import get_settings
 from .database import SessionLocal, create_all, dispose
 from .models import Role, User
-from .routers import ai, alerts, audit, auth, business, compliance, dashboard, debts, ingest, sync, thermal
+from .routers import ai, alerts, audit, auth, business, compliance, dashboard, debts, ingest, sync, thermal, weather
 from .schemas import HealthResponse
 from .security import scopes_for
 from .seed import seed_if_empty
@@ -87,7 +87,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Connector-Api-Key"],
 )
 
-for module in (auth.router, dashboard.router, thermal.router, business.router, debts.router, alerts.router, ingest.router, audit.router, sync.router, ai.router, compliance.router):
+for module in (auth.router, dashboard.router, thermal.router, business.router, debts.router, alerts.router, ingest.router, audit.router, sync.router, ai.router, compliance.router, weather.router):
     app.include_router(module)
 
 

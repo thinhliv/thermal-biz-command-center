@@ -13,6 +13,7 @@ Khi EVN ra quyet dinh moi, sua `EVN_PRICES` va them bo band voi `effective_from`
 
 from __future__ import annotations
 
+import math
 import random
 from datetime import date, datetime, timedelta
 
@@ -34,6 +35,7 @@ from .models import (
     Metric,
     MonthlyTarget,
     OrderStatus,
+    OutdoorWeatherSample,
     Receivable,
     ReceivableStatus,
     Role,
@@ -989,6 +991,61 @@ def seed_sites(session: Session) -> int:
     return created
 
 
+def seed_weather_samples(session: Session, rng: random.Random) -> int:
+    """Tạo dữ liệu thời tiết ngoài trời thực tế cho các chi nhánh (Site).
+
+    Nhiệt độ ngoài trời theo chu kỳ ngày-đêm nhiệt đới Việt Nam:
+    - Đêm/sáng sớm (4h - 6h): 24°C - 26°C, độ ẩm cao (80% - 90%)
+    - Buổi trưa/chiều (13h - 15h): 33°C - 36°C, độ ẩm thấp hơn (55% - 65%)
+    - Đảm bảo tính toán CDD (Cooling Degree Days) phục vụ chuẩn hoá IPMVP Option B/C.
+    - Idempotent: bỏ qua nếu đã có dữ liệu.
+    """
+    if session.scalars(select(OutdoorWeatherSample).limit(1)).first():
+        return 0
+
+    sites = list(session.scalars(select(Site)))
+    if not sites:
+        return 0
+
+    now = utcnow().replace(second=0, microsecond=0)
+    start = now - timedelta(hours=SAMPLE_HOURS)
+    step_minutes = 60
+    total_steps = SAMPLE_HOURS * 60 // step_minutes + 1
+    rows = 0
+
+    station_names = {
+        "SITE-NHA-A": ("ROOFTOP-NHA-A-TEMP01", "ON_SITE_SENSOR"),
+        "SITE-NHA-B": ("ROOFTOP-NHA-B-METEO", "ON_SITE_SENSOR"),
+        "SITE-NHA-C": ("VVTS-HO-CHI-MINH", "METEOROLOGICAL_STATION"),
+    }
+
+    for site in sites:
+        st_id, source = station_names.get(site.code, ("ROOFTOP-SENSOR", "ON_SITE_SENSOR"))
+        for step in range(total_steps):
+            moment = start + timedelta(minutes=step * step_minutes)
+            hour = moment.hour + moment.minute / 60.0
+            diurnal_wave = math.sin(2 * math.pi * (hour - 9) / 24.0)
+            base_temp = 29.5 + 4.5 * diurnal_wave + rng.uniform(-0.8, 0.8)
+            humidity = 72.0 - 15.0 * diurnal_wave + rng.uniform(-3.0, 3.0)
+
+            session.add(
+                OutdoorWeatherSample(
+                    site_id=site.id,
+                    site_code=site.code,
+                    ts=moment,
+                    ambient_temperature_c=round(base_temp, 2),
+                    relative_humidity_pct=round(max(30.0, min(100.0, humidity)), 1),
+                    source=source,
+                    station_id=st_id,
+                    is_measured=True,
+                )
+            )
+            rows += 1
+
+    session.flush()
+    return rows
+
+
 # --------------------------------------------------------------------------- #
 # Entry point
 # --------------------------------------------------------------------------- #
@@ -996,13 +1053,15 @@ def seed_if_empty(session: Session, force: bool = False) -> dict:
     """Seed khi DB rong. Tra ve thong ke de log/doc qua API."""
     has_data = session.scalars(select(Equipment).limit(1)).first() is not None
     if has_data and not force:
-        # Site la master data them o ban sau. Backfill idempotent de mot DB cu khi
-        # nang cap khong bi chet Pillar 3: khong co Site thi /api/sync/push 404 het.
+        # Site & Weather la master data them o ban sau. Backfill idempotent
         backfilled = seed_sites(session)
+        backfilled_weather = seed_weather_samples(session, rng=random.Random(RANDOM_SEED))
         session.commit()
         stats = {"seeded": False, "reason": "Da co du lieu, bo qua seed."}
         if backfilled:
             stats["sites_backfilled"] = backfilled
+        if backfilled_weather:
+            stats["weather_samples_backfilled"] = backfilled_weather
         return stats
 
     rng = random.Random(RANDOM_SEED)
@@ -1014,6 +1073,7 @@ def seed_if_empty(session: Session, force: bool = False) -> dict:
     equipment = seed_equipment(session)
     rules = seed_alarm_rules(session)
     samples = seed_telemetry(session, equipment, rng)
+    weather_samples = seed_weather_samples(session, rng)
     session.commit()
 
     customers = seed_customers(session)
@@ -1038,6 +1098,7 @@ def seed_if_empty(session: Session, force: bool = False) -> dict:
         "equipment": len(equipment),
         "alarm_rules": rules,
         "telemetry_samples": samples,
+        "weather_samples": weather_samples,
         "customers": len(customers),
         "monthly_targets": targets,
         "service_orders": len(orders),
@@ -1054,6 +1115,7 @@ def reset(session: Session) -> None:
     # Thu tu quan trong: bang con phai xoa truoc bang cha (SyncBatch -> Site,
     # AuditLog/Alert -> User). Dao thu tu se vo FK khi Postgres bat rang buoc.
     for model in (
+        OutdoorWeatherSample,
         SyncBatch,
         Site,
         Alert,

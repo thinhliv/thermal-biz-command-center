@@ -4,12 +4,13 @@ File nay giu ba bat bien:
   1. KHONG DUOC ket luan khi du lieu khong cho phep. Logic cu trong `ai_energy.py` thay COP thap
      la noi "ro ri moi chat" - ke ca voi lo hoi (thiet bi khong co moi chat lanh de ma ro ri).
      Thieu du lieu phai tra ve INSUFFICIENT_DATA, khong phai mot doan sai.
-  2. KHONG DUOC bịa kha nang tach nguyen nhan. Ban dan nong va mon may nen deu nam o phia cao;
+  2. KHONG DUOC bia kha nang tach nguyen nhan. Ban dan nong va mon may nen deu nam o phia cao;
      khi chua co nhiet do ngung tu thi ket qua phai mang `ambiguity`, khong phai mot ket luan
      tu tin.
-  3. KHONG mot con so ap suat nao duoc go tay trong test. Moi gia tri ap suat o day deu duoc
-     tinh tu nhiet do bang chinh `refrigerant.saturation_pressure_bar` (CoolProp). Go tay thi
-     test se "pass" voi mot moi chat va am that voi moi chat khac.
+  3. KHONG mot con so ap suat nao cua MOI CHAT LANH duoc go tay trong test. Moi gia tri o day deu
+     duoc tinh tu nhiet do bang chinh `refrigerant.saturation_pressure_bar` (CoolProp). Go tay thi
+     test se "pass" voi mot moi chat va am that voi moi chat khac. (Ap suat hoi cua lo hoi la ngoai
+     le: no khong bao gio di qua CoolProp, nen khong the gay lech am tham nhu vay.)
 """
 
 from __future__ import annotations
@@ -18,7 +19,14 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models import REFRIGERATION_KINDS, Equipment, EquipmentKind, EquipmentStatus
+from app.models import (
+    REFRIGERATION_KINDS,
+    Equipment,
+    EquipmentKind,
+    EquipmentStatus,
+    TelemetrySample,
+)
+from app.seed import EVAP_APPROACH_K
 from app.services.diagnostics import (
     APPROACH_LOW_SIDE_FAULT_K,
     MAX_HEALTHY_APPROACH_K,
@@ -90,6 +98,11 @@ def test_dang_xa_bang_thi_khong_chan_doan():
     )
     assert result.status is FaultCode.INSUFFICIENT_DATA
     assert result.evaporating_c is None
+    # Ket qua phai noi ca NGUYEN NHAN lan VIEC CAN LAM. Chi noi "thieu du lieu" thi nguoi van hanh
+    # khong biet lam gi tiep; chi noi "doi het xa bang" thi khong biet vi sao phai doi.
+    assert result.ambiguity is not None
+    assert "xa bang" in result.ambiguity
+    assert "KHONG phai" in result.ambiguity
 
 
 def test_thieu_nhiet_do_dat_phai_noi_ro_la_chua_ket_luan_duoc():
@@ -104,6 +117,8 @@ def test_thieu_nhiet_do_dat_phai_noi_ro_la_chua_ket_luan_duoc():
     # Diem quan trong: nguoi van hanh khong duoc nham "khong co ket luan" thanh "may dang tot".
     assert result.ambiguity is not None
     assert "KHONG phai" in result.ambiguity
+    # Va phai noi ro thieu cai gi, neu khong khong biet bo sung gi.
+    assert "nhiet do dat" in result.ambiguity
 
 
 def test_thieu_ap_suat_phai_noi_ro_la_chua_ket_luan_duoc():
@@ -116,6 +131,7 @@ def test_thieu_ap_suat_phai_noi_ro_la_chua_ket_luan_duoc():
     )
     assert result.status is FaultCode.INSUFFICIENT_DATA
     assert result.ambiguity is not None
+    assert "ap suat" in result.ambiguity
 
 
 def test_nhan_moi_chat_la_thi_noi_loi_chu_khong_am_thang_bo_qua():
@@ -165,7 +181,7 @@ def test_dan_bay_hoi_nong_hon_kho_thi_mat_kha_nang_lam_lanh():
     capability = _finding(result, FaultCode.NO_COOLING_CAPABILITY)
     assert capability is not None
     assert capability.confidence is Confidence.CONFIRMED
-    assert "HACCP" in capability.remediation_text if False else "HACCP" in capability.remedy
+    assert "HACCP" in capability.remedy
 
 
 def test_chenh_lech_qua_lon_thi_loai_duoc_dan_nong():
@@ -227,7 +243,7 @@ def test_chenh_lech_qua_hep_thi_nghi_may_nen_khong_tao_du_chenh_ap():
 
 
 def test_binh_thuong_va_cop_binh_thuong_thi_khong_sinh_chan_doan():
-    """Khong duoc bịa ra su co khi moi thu binh thuong.
+    """Khong duoc bia ra su co khi moi thu binh thuong.
 
     Mot he thong chan doan luon tra ve it nhat mot nguyen nhan "POSSIBLE" se bi nguoi van hanh bo
     qua toan bo, ke ca luc no dung.
@@ -367,19 +383,35 @@ def test_sut_deu_khong_hoi_phuc_la_thieu_moi_chat():
     series = [
         (16.0, False), (17.0, False), (18.0, True), (18.5, False), (19.5, True), (20.5, False),
     ]
-    result = separate_frost_from_undercharge(series)
-    assert result is FaultCode.UNDERCHARGE
-    # Dao dong giua cac mau sau xa bang phai nam duoi nguong hoi phuc.
-    assert (19.5 - 18.0) < MIN_DEFROST_RECOVERY_K
+    assert separate_frost_from_undercharge(series) is FaultCode.UNDERCHARGE
+    # Do hoi phuc that su la AM: sau xa bang chenh lech con LON hon truoc do (17 -> 18, 18.5 -> 19.5).
+    # Bang khong tan ma chenh lech van tang thi chi co the la thieu moi chat.
+    assert all(post > pre for pre, post in ((17.0, 18.0), (18.5, 19.5)))
 
 
-def test_dao_dong_duoi_nguong_hoi_phuc_thi_khong_duoc_goi_la_dong_bang():
-    """Bien do dung bang nguong: phai nho hon nguong moi goi la khong hoi phuc."""
-    flat = [(18.0, True), (18.0 + MIN_DEFROST_RECOVERY_K - 0.1, True)]
-    assert separate_frost_from_undercharge(flat) is FaultCode.UNDERCHARGE
+def test_hoi_phuc_duoi_nguong_thi_khong_duoc_goi_la_dong_bang():
+    """Bien do dung bang nguong: phai nho hon nguong thi moi goi la khong hoi phuc."""
+    anchor = 18.0
+    below = [(anchor, False), (anchor - MIN_DEFROST_RECOVERY_K + 0.1, True)] * 2
+    assert separate_frost_from_undercharge(below) is FaultCode.UNDERCHARGE
 
-    sawtooth = [(18.0, True), (18.0 + MIN_DEFROST_RECOVERY_K, True)]
-    assert separate_frost_from_undercharge(sawtooth) is FaultCode.EVAPORATOR_FROST
+    at_threshold = [(anchor, False), (anchor - MIN_DEFROST_RECOVERY_K, True)] * 2
+    assert separate_frost_from_undercharge(at_threshold) is FaultCode.EVAPORATOR_FROST
+
+
+def test_khong_co_cap_truoc_sau_thi_khong_duoc_lay_dao_dong_lam_bang_chung():
+    """Day la cai bay nguy hiem nhat cua ham nay.
+
+    Neu moi mau deu la "sau xa bang" thi khong co gi de doi chieu. Dao dong GIUA cac mau sau xa
+    bang khong phai la tin hieu bang tan - no la nhieu. Ket luan tu do se chi dinh sai cho ca mot
+    dot sua chua, nen phai tra ve None.
+    """
+    only_post = [(18.0, True), (18.0 + MIN_DEFROST_RECOVERY_K + 5.0, True)]
+    assert separate_frost_from_undercharge(only_post) is None
+
+    # Mot mau sau xa bang dau chuoi (khong co mau truoc do de lam moc) cung khong doi chieu duoc.
+    leading_post = [(18.0, True), (12.0, False), (19.0, False), (7.0, True)]
+    assert separate_frost_from_undercharge(leading_post) is FaultCode.EVAPORATOR_FROST
 
 
 # --------------------------------------------------------------------------- #
@@ -415,8 +447,6 @@ def test_toan_bo_doi_tau_lanh_trong_seed_duoc_chan_doan_la_khong_co_su_co_phia_t
 
 def test_nguong_chan_doan_phai_nhat_quan_voi_mien_thiet_ke():
     """Mien thiet ke phai nam tron trong mien "khong bao dong", neu khong hai bo nguong tu mau thuan."""
-    from app.seed import EVAP_APPROACH_K
-
     assert EVAP_APPROACH_K[0] > MIN_EFFECTIVE_APPROACH_K
     assert EVAP_APPROACH_K[1] < MAX_HEALTHY_APPROACH_K
     assert MAX_HEALTHY_APPROACH_K < APPROACH_LOW_SIDE_FAULT_K
@@ -432,9 +462,9 @@ def test_moi_thiet_bi_lanh_trong_seed_deu_chan_doan_duoc_tu_du_lieu_that(seeded:
     equipments = list(seeded.scalars(select(Equipment).where(Equipment.kind.in_(kinds))))
     assert equipments
 
-    from app.models import TelemetrySample
-
     checked = 0
+    saw_defrost_gap = 0
+    saw_real_diagnosis = 0
     for equipment in equipments:
         samples = list(
             seeded.scalars(
@@ -451,9 +481,28 @@ def test_moi_thiet_bi_lanh_trong_seed_deu_chan_doan_duoc_tu_du_lieu_that(seeded:
                 measured_cop=sample.cop,
                 is_defrosting=sample.status == EquipmentStatus.DEFROST.value,
             )
-            assert result.status in set(FaultCode)
+            if result.status is FaultCode.INSUFFICIENT_DATA:
+                # Seed dat `pressure_bar = None` va status DEFROST cho mau dang xa bang; day la
+                # nhanh phai tra ve INSUFFICIENT_DATA chu khong duoc tinh chenh lech nhiet do.
+                assert sample.status == EquipmentStatus.DEFROST.value
+                assert sample.pressure_bar is None
+                saw_defrost_gap += 1
+            else:
+                # Seed sinh chenh lech 6-9 K, nam trong mien thiet ke -> phai ra HEALTHY, khong duoc
+                # bao dong tren du lieu binh thuong.
+                assert result.status is FaultCode.HEALTHY, (
+                    f"{equipment.code} tai {sample.ts.isoformat()} bi chan doan "
+                    f"{result.status.value} du seed sinh ra chenh lech nam trong mien thiet ke"
+                )
+                assert result.approach_k is not None
+                assert EVAP_APPROACH_K[0] - 0.5 <= result.approach_k <= EVAP_APPROACH_K[1] + 0.5
+                saw_real_diagnosis += 1
             checked += 1
+
+    # Phai chay qua CA HAI nhanh, neu khong test nay co the "pass" ma chua he kiem tra duong nao.
     assert checked > 0
+    assert saw_defrost_gap > 0, "Seed khong co mau xa bang nao - nhanh INSUFFICIENT_DATA chua duoc chay"
+    assert saw_real_diagnosis > 0, "Khong co mau binh thuong nao - nhanh chan doan that chua duoc chay"
 
 
 def test_lo_hoi_trong_seed_khong_bao_ro_ri(seeded: Session):
@@ -468,7 +517,10 @@ def test_lo_hoi_trong_seed_khong_bao_ro_ri(seeded: Session):
         result = diagnose_low_side(
             refrigerant_label=boiler.refrigerant,
             setpoint_c=boiler.setpoint_c,
+            # 9.0 bar la ap suat Hoi cua lo hoi, lay dung mien ma seed sinh ra (8.6-9.6 bar).
+            # Du co ap suat that va hop ly, ket qua van phai la INSUFFICIENT_DATA.
             pressure_bar=9.0,
             measured_cop=None,
         )
         assert result.status is FaultCode.INSUFFICIENT_DATA
+        assert result.ambiguity is not None and "KHONG phai" in result.ambiguity

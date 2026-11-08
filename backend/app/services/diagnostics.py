@@ -445,33 +445,31 @@ def separate_frost_from_undercharge(
             `is_post_defrost` danh dau mau lay NGAY SAU khi ket thuc mot chu ky xa bang.
 
     Returns:
-        `EVAPORATOR_FROST`, `UNDERCHARGE`, hoac None khi chua du bang chung. None la ket qua hop
-        le: doan sai o day se chi dinh sai cho ca mot dot sua chua.
+        `EVAPORATOR_FROST`, `UNDERCHARGE`, hoac None khi chua du bang chung (qua it mau sau xa bang,
+        hoac khong co cap "truoc - sau" nao de doi chieu). None la ket qua hop le: doan sai o day
+        se chi dinh sai cho ca mot dot sua chua.
     """
-    post_defrost = [value for value, is_post in approach_series if is_post]
-    if len(post_defrost) < MIN_POST_DEFROST_SAMPLES:
+    post_defrost_count = sum(1 for _, is_post in approach_series if is_post)
+    if post_defrost_count < MIN_POST_DEFROST_SAMPLES:
         return None
 
-    # Kiem tra do hoi phuc (do giam chenh lech) qua tung chu ky xa bang:
-    # Khi dong bang, lop bang tan giup T_evap tang len -> approach giam manh (chenh lech giam >= 3K).
-    # Khi thieu gas, khoi luong moi chat khong doi nen chenh lech van giu nguyen hoac tiep tuc tang.
-    recoveries = []
-    for idx, (val, is_post) in enumerate(approach_series):
-        if is_post and idx > 0 and not approach_series[idx - 1][1]:
-            recoveries.append(approach_series[idx - 1][0] - val)
+    # Do hoi phuc = chenh lech nhiet do NGAY TRUOC tru NGAY SAU mot chu ky xa bang. Dong bang thi
+    # lop bang tan giup T_evap nang len nen chenh lech giam manh; thieu moi chat thi khoi luong moi
+    # chat khong doi, chenh lech giu nguyen hoac tiep tuc tang (do hoi phuc am).
+    recoveries = [
+        approach_series[idx - 1][0] - value
+        for idx, (value, is_post) in enumerate(approach_series)
+        if is_post and idx > 0 and not approach_series[idx - 1][1]
+    ]
 
-    if recoveries:
-        if max(recoveries) >= MIN_DEFROST_RECOVERY_K:
-            return FaultCode.EVAPORATOR_FROST
-        return FaultCode.UNDERCHARGE
+    if not recoveries:
+        # Khong co cap "truoc - sau xa bang" nao de doi chieu. Do dao dong GIUA cac mau sau xa
+        # bang khong phai la tin hieu hoi phuc: no chi la nhieu, va dung no de ket luan la doan
+        # mot nguyen nhan sua chua tu so lieu khong noi duoc gi.
+        return None
 
-    # Fallback cho tap chi gom cac mau post-defrost:
-    recovery = max(post_defrost) - min(post_defrost)
-    if recovery < MIN_DEFROST_RECOVERY_K:
-        return FaultCode.UNDERCHARGE
-    return FaultCode.EVAPORATOR_FROST
-
-
-#: So mau sau xa bang toi thieu de ket luan. Mot mau duy nhat khong noi duoc gi ve "co hoi phuc
-#: hay khong", va ket luan tu mot mau se la doan.
-MIN_POST_DEFROST_SAMPLES = 2
+    # Mot lan hoi phuc ro ret da du ket luan dong bang, vi thieu moi chat thi khoi luong moi chat
+    # khong tu hoi phuc sau xa bang - day la mot bang chung ton tai, khong phai mot phep trung binh.
+    if max(recoveries) >= MIN_DEFROST_RECOVERY_K:
+        return FaultCode.EVAPORATOR_FROST
+    return FaultCode.UNDERCHARGE

@@ -47,7 +47,7 @@ from .models import (
     User,
 )
 from .security import hash_password
-from .services import billing, thermal
+from .services import billing, refrigerant, thermal
 from .timeutil import month_bounds, utcnow, utctoday
 
 RANDOM_SEED = 20260107
@@ -233,7 +233,10 @@ EQUIPMENT_SPEC: list[dict] = [
         "location": "Phòng máy - Nhà A",
         "refrigerant": "R404A",
         "rated_power_kw": 120.0,
-        # Nhiet do bay hoi dich (-30C) cap cho cac kho -22/-25C; R404A o muc nay ~1.3-2.1 bar
+        # Nhiet do bay hoi thiet ke (-30C) cua cum may nen, cap cho cac kho -22/-25C. Ap suat
+        # trong telemetry SUY RA tu chinh con so nay (xem `_evaporating_pressure_bar`), khong
+        # phai mot khoang bar go tay: mot khoang go tay chi dung ngau nhien cho mot loai moi
+        # chat va mot nhiet do dat, doi moi chat hoac doi setpoint la thanh du lieu sai.
         "setpoint_c": -30.0,
         "design_cop": 3.4,
     },
@@ -406,6 +409,36 @@ def _profile_for(code: str, spec: dict) -> dict:
     }
 
 
+#: Chenh lech nhiet do giua nhiet do bay hoi va nhiet do dat cua kho, tinh bang K.
+#: Dan bay hoi phai LANH HON khong khi trong kho thi nhiet moi chay vao duoc; 6-9 K la
+#: mien thiet ke thong thuong cho kho lanh. Day la kien thuc nganh (mot tham so thiet ke),
+#: khong phai so lieu nhiet vat ly cua moi chat - con so nhiet vat ly do CoolProp tinh.
+EVAP_APPROACH_K = (6.0, 9.0)
+
+
+def _evaporating_pressure_bar(spec: dict, setpoint: float, status: str, rng: random.Random) -> float | None:
+    """Ap suat DAN BAY HOI suy ra tu nhiet do dat cua kho, bang phuong trinh trang thai.
+
+    `pressure_bar` cua thiet bi lanh mang nghia ap suat phia thap (dan bay hoi); phia lo hoi
+    mang nghia ap suat hoi - hai nghia nay tach biet theo `is_boiler` va frontend chi hien
+    ap suat cho thiet bi khong phai lanh.
+
+    KHONG duoc go tay khoang ap suat: cung mot con so 1.3 bar la -40.9 C voi R404A nhung
+    la mot nhiet do hoan toan khac voi R134a. Moi khoang go tay deu chi dung ngau nhien
+    cho mot loai moi chat va mot nhiet do dat. Tinh ra tu setpoint thi dung voi moi kho.
+
+    Tra ve None khi dang pha bang: luc do dan bay hoi duoc nong hoa khi nen vao, khong con
+    dang bay hoi de hap thu nhiet, nen "ap suat bao hoa tuong ung nhiet do bay hoi" khong
+    ton tai. Dien mot con so vao o day la bia ra mot trang thai vat ly khong co that.
+    """
+    if status == EquipmentStatus.DEFROST.value:
+        return None
+
+    evap_c = setpoint - rng.uniform(*EVAP_APPROACH_K)
+    pressure = refrigerant.saturation_pressure_bar(spec.get("refrigerant"), evap_c)
+    return round(pressure, 2) if pressure is not None else None
+
+
 def _sample_for(spec: dict, profile: dict, rng: random.Random, moment: datetime, idx: int, total: int) -> dict:
     progress = idx / max(1, total - 1)  # 0 = dau chuoi, 1 = bay gio
     hour = moment.hour + moment.minute / 60
@@ -457,9 +490,7 @@ def _sample_for(spec: dict, profile: dict, rng: random.Random, moment: datetime,
         vibration = 1.6 + progress * 3.7 + rng.uniform(-0.2, 0.2)  # len ~5.1 mm/s
     vibration = round(vibration, 2)
 
-    pressure = round(rng.uniform(1.3, 2.1) if setpoint < 0 else rng.uniform(3.1, 4.4), 2)
-    if spec["kind"] == EquipmentKind.CHILLER:
-        pressure = round(rng.uniform(8.2, 9.2), 2)
+    pressure = _evaporating_pressure_bar(spec, setpoint, status, rng)
 
     return {
         "ts": moment,

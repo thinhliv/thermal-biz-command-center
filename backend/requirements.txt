@@ -11,3 +11,11 @@ bcrypt>=4.1.0
 
 # Postgres (prod). SQLite khong can driver ngoai.
 psycopg2-binary>=2.9.9
+
+# Tinh chat nhiet vat ly moi chat lanh (app/services/refrigerant.py).
+# PIN CHINH XAC, khong dung >= nhu cac dong tren: gia tri CoolProp tra ve di thang vao
+# chan doan va bao cao co ky. Nang version la doi so lieu bao cao ma khong ai thay diff,
+# nen moi lan nang phai la mot quyet dinh co chu y, khong phai tac dung phu cua pip.
+# Giay phep MIT. Co wheel cp312 cho win_amd64 va manylinux2014/aarch64 -> image
+# python:3.12-slim cai duoc ma khong can gcc. Keo theo numpy (CoolProp tu rang buoc).
+CoolProp==8.0.0

@@ -92,7 +92,13 @@ def auth(token: str) -> dict[str, str]:
 
 @pytest.fixture()
 def tokens(seeded_client: TestClient) -> dict[str, str]:
-    """Token cho ca 3 vai, khoa bang username trong DEMO_USERS."""
+    """Token cho ca 13 vai, khoa bang username trong DEMO_USERS.
+
+    Dang nhap that qua HTTP (khong sinh JWT tay) va lam moi cho tung test: nhieu test sua
+    `is_active`/`role` cua user, nen token dung chung se roy thu tu chay. Gia phai tra do
+    truc tiep: setup 1.06s khi chi co `seeded_client`, 4.36s khi them fixture nay - tuc
+    ~3.3s bcrypt cho moi test dung no. Dung doi sang cache ma khong co ly do moi.
+    """
     return {role.value: login(seeded_client, username) for username, role, _, _ in DEMO_USERS}
 
 

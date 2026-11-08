@@ -71,7 +71,7 @@ app = FastAPI(
     title="Thermal & Business Command Center API",
     description=(
         "API thoi gian thuc ket hop ky thuat nhiet lanh va quan tri kinh doanh. "
-        "Xac thuc JWT, phan quyen 3 vai (BGD / VANHANH / KETOAN). "
+        "Xac thuc JWT, phan quyen 13 vai (BGD / VANHANH / KETOAN + ma tran L1-L10). "
         "Endpoint /api/ingest/* danh cho connector, khoa bang X-Connector-Api-Key."
     ),
     version=settings.version,

@@ -6,9 +6,9 @@ import { describeAuthError, useAuth } from '../store/auth';
 import type { Role } from '../types/api';
 
 /**
- * Suy ra từ `ROLE_LABELS` thay vì liệt kê tay: mọi vai trò có nhãn đều là vai trò đã được
- * seed. Quy ước username = tên vai viết thường khớp với `DEMO_USERS` trong `backend/app/seed.py`
- * và bị khoá bởi `test_seed_du_moi_vai_tro_trong_role_enum`.
+ * Suy ra từ `ROLE_LABELS` thay vì liệt kê tay. Phép suy ra này chỉ đúng nhờ hai test backend:
+ * `test_seed_du_moi_vai_tro_trong_role_enum` (mọi Role đều có trong `DEMO_USERS`) và
+ * `test_username_demo_suy_ra_duoc_tu_ten_vai` (username = tên vai viết thường).
  */
 const DEMO_ACCOUNTS: Array<{ username: string; role: Role }> = (Object.keys(ROLE_LABELS) as Role[]).map(
   (role) => ({ username: role.toLowerCase(), role }),

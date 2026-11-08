@@ -89,11 +89,29 @@ Khởi chạy stack ứng dụng cốt lõi (FastAPI Backend + PostgreSQL + Graf
 - **Grafana App Dashboard:** [http://localhost:3000](http://localhost:3000) (User: `admin` / Password trong `.env`)
 
 ### 3. Tài khoản Demo có sẵn (Seed Data)
-| Tên đăng nhập | Mật khẩu mặc định | Vai trò (Role) | Quyền hạn |
+
+Seed tạo **13 tài khoản** — đủ cho toàn bộ ma trận phân quyền. Tất cả dùng chung mật khẩu
+trong biến `SEED_DEMO_PASSWORD` của file `.env` (bắt buộc ≥ 8 ký tự khi `AUTO_SEED=true`).
+Mật khẩu này **không** được ghi vào README: tài liệu nằm trong Git, còn mật khẩu thì không nên.
+
+| Tên đăng nhập | Vai trò (Role) | Người demo | Quyền hạn |
 | :--- | :--- | :--- | :--- |
-| `bgd` | `ThermalBiz2026!` | Ban Giám Đốc | Toàn quyền xem tài chính, kỹ thuật, duyệt chi và cấu hình hệ thống. |
-| `vanhanh` | `ThermalBiz2026!` | Vận Hành | Giám sát kỹ thuật nhiệt, trạng thái thiết bị, xác nhận/đóng cảnh báo. |
-| `ketoan` | `ThermalBiz2026!` | Kế Toán | Quản trị doanh thu, chi phí điện, công nợ khách hàng và xuất hóa đơn. |
+| `bgd` | `BGD` | Nguyễn Văn Hùng | Toàn quyền — thấy mọi trụ. |
+| `vanhanh` | `VANHANH` | Trần Thị Mai | Kỹ thuật nhiệt, cảnh báo; xác nhận/đóng sự cố. |
+| `ketoan` | `KETOAN` | Lê Quốc Bảo | Kinh doanh, công nợ, xuất hóa đơn. |
+| `l1_chairman` | `L1_CHAIRMAN` | Phạm Minh Đăng | Toàn quyền — cổ đông chiến lược. |
+| `l2_ceo` | `L2_CEO` | Võ Thuỳ Linh | Toàn quyền điều hành trên tất cả các trụ. |
+| `l3_technical_director` | `L3_TECHNICAL_DIRECTOR` | Đặng Quốc Việt | Nhiệt, cảnh báo, AI, đồng bộ, nhật ký kiểm toán. |
+| `l4_operations_manager` | `L4_OPERATIONS_MANAGER` | Hồ Sỹ Nam | Nhiệt, cảnh báo, đồng bộ trạm — không thấy tiền. |
+| `l5_maintenance_engineer` | `L5_MAINTENANCE_ENGINEER` | Lý Văn Thành | Nhiệt, cảnh báo, lịch cắt đỉnh phụ tải. |
+| `l6_haccp_auditor` | `L6_HACCP_AUDITOR` | Nguyễn Hà Phương | HACCP, ESG, phát hành chứng chỉ, nhật ký kiểm toán. |
+| `l7_warehouse_dispatcher` | `L7_WAREHOUSE_DISPATCHER` | Trương Văn Điền | Nhiệt và cảnh báo kho lạnh. |
+| `l8_cfo` | `L8_CFO` | Đỗ Thị Kim Ngân | Kinh doanh, công nợ, ESG, nhật ký kiểm toán. |
+| `l9_billing_specialist` | `L9_BILLING_SPECIALIST` | Bùi Tuấn Kiệt | Kinh doanh và công nợ. |
+| `l10_sales_executive` | `L10_SALES_EXECUTIVE` | Ngô Thanh Hà | Chỉ thấy Kinh doanh. |
+
+> Đổi `SEED_DEMO_PASSWORD` ngay sau lần đăng nhập đầu. Hệ thống **chưa có endpoint tạo người
+> dùng**, nên `DEMO_USERS` trong `backend/app/seed.py` hiện là nguồn tài khoản duy nhất.
 
 ---
 

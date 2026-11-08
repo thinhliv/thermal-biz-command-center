@@ -335,6 +335,16 @@ def test_frontend_routes_khop_router_that() -> None:
     assert {scope for _, scope in declared} <= set(ALL_SCOPES)
 
 
+def test_username_demo_suy_ra_duoc_tu_ten_vai() -> None:
+    """`LoginPage.tsx` khong liet ke tay nua ma sinh username = ten vai viet thuong.
+
+    Doi quy uoc dat ten o `DEMO_USERS` ma khong sua frontend thi nut bam dien ten dang nhap
+    se dien mot tai khoan khong ton tai - nguoi dung bam va nhan 401 ma khong hieu vi sao.
+    """
+    for username, role, _, _ in DEMO_USERS:
+        assert username == role.value.lower(), f"{username} phai la {role.value.lower()}"
+
+
 # --------------------------------------------------------------------------- #
 # Endpoint cong khai
 # --------------------------------------------------------------------------- #

@@ -151,7 +151,10 @@ services:
     container_name: enterprise_grafana
     restart: unless-stopped
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      # GRAFANA_PORT_A rieng, KHONG dung lai GRAFANA_PORT: stack A bat buoc chay CUNG LUC
+      # voi stack ung dung (noi mang external thermalbiz_shared de connector_a goi duoc
+      # FastAPI). Hai service cung bind 3000 thi docker bao "port is already allocated".
+      - "${GRAFANA_PORT_A:-3003}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD must be set in .env}
@@ -159,11 +162,20 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-false}
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_USERS_DEFAULT_THEME: dark
-      # provisioning/datasources/enterprise.yaml noi suy 2 bien nay.
+      # provisioning/datasources/enterprise.yaml noi suy 6 bien nay TU MOI TRUONG CUA
+      # CONTAINER GRAFANA (khong phai tu .env cua host). Thieu bien nao thi Grafana thay
+      # bang chuoi rong -> datasource provision ra voi database/user rong va MOI panel deu
+      # loi khi query. Vi vay phai forward du ca ten DB va user, khong chi password.
+      # Gia tri mac dinh giong het gia tri mac dinh cua service tb_postgres / erp_database
+      # ben tren, de Grafana va DB khong bao gio nhin thay hai cai ten khac nhau.
       # KHONG yeu cau NINJA_DB_PASSWORD: stack A khong chay Invoice Ninja. Bat nguoi dung
       # khai secret cua mot dich vu khong ton tai trong stack nay la ly do khien ca stack
       # khong len duoc (`required variable is missing a value`) ma chang lien quan gi toi loi.
+      TB_DB_NAME: ${TB_DB_NAME:-thingsboard}
+      TB_DB_USER: ${TB_DB_USER:-tb_user}
       TB_DB_PASSWORD: ${TB_DB_PASSWORD:?TB_DB_PASSWORD must be set in .env}
+      ERP_DB_NAME: ${ERP_DB_NAME:-erpnext_db}
+      ERP_DB_USER: ${ERP_DB_USER:-erp_user}
       ERP_DB_PASSWORD: ${ERP_DB_PASSWORD:?ERP_DB_PASSWORD must be set in .env}
     volumes:
       - grafana_data:/var/lib/grafana

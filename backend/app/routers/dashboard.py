@@ -6,15 +6,12 @@ Khong tra ve du lieu roi moi bao frontend an di - nhu vay van lo du lieu qua net
 
 from __future__ import annotations
 
-from datetime import timedelta
-
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ..database import get_session
-from ..models import Role, User
-from ..schemas import UserPublic
-from ..security import AnyRole, get_current_user, scopes_for
+from ..models import User
+from ..security import AnyRole, scopes_for
 from ..services import billing, finance, thermal
 from ..timeutil import day_bounds, utcnow
 

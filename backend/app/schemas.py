@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .models import Comparator, EquipmentStatus, Metric, Role, Severity
+from .models import Comparator, EquipmentStatus, Metric, Severity
 
 ENTITY_ID_PATTERN = r"^[a-z0-9_]+\.[a-z0-9_]+$"
 
@@ -228,11 +228,13 @@ class ThermalSummary(BaseModel):
 
 
 class HealthResponse(BaseModel):
+    """Dung cho `GET /api/health`. Giu khop 1-1 voi payload that o `main.health_check`."""
+
     status: Literal["ok", "degraded"]
     system: str
     version: str
     database: str
-    tables: int | None = None
+    backend: Literal["sqlite", "postgres"]
 
 
 TelemetryIngestResult.model_rebuild()

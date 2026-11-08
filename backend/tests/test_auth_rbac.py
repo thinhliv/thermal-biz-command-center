@@ -1,16 +1,25 @@
-"""JWT + RBAC 3 vai: BGD thay het, Van hanh chi Nhiet+Canh bao, Ke toan chi Kinh doanh+Cong no.
+"""JWT + RBAC 13 vai: 3 vai co ban (BGD/VANHANH/KETOAN) + ma tran L1-L10 Enterprise.
 
 Diem trong tam: du lieu phai bi CAT O SERVER. Tra ve het roi bao frontend an di
 van lo du lieu qua network.
+
+Diem trong tam thu hai: `scopes_for()` va cac bundle `require_roles(...)` phai khop nhau.
+Frontend ve tab dua tren scopes trong `/api/auth/me`, nen cap scope ma endpoint van 403
+la tab mo ra chi de hien loi - L6_HACCP_AUDITOR tung bi dung nhu vay voi bao cao HACCP.
 """
 
 from __future__ import annotations
+
+import re
+from pathlib import Path
 
 import jwt as pyjwt
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
-from app.security import ROLE_SCOPES
+from app.models import Role
+from app.seed import DEMO_USERS
+from app.security import ALL_SCOPES, ROLE_SCOPES, scopes_for
 
 PASSWORD = "TestPass!2026"
 
@@ -174,6 +183,156 @@ def test_stream_snapshot_chi_co_nhiet_va_canh_bao(seeded_client: TestClient, tok
     assert seeded_client.get(
         "/api/dashboard-summary/stream-snapshot", headers={"Authorization": f"Bearer {tokens['KETOAN']}"}
     ).json() == {}
+
+
+# --------------------------------------------------------------------------- #
+# Ma tran L1-L10: scopes phai khop voi bundle quyen that
+# --------------------------------------------------------------------------- #
+#: Endpoint doc nhe nhat cua tung scope. `overview` khong co o day vi no bi cat theo NOI
+#: DUNG ben trong /api/dashboard-summary (moi vai deu goi duoc, chi khac phan tra ve)
+#: chu khong chan o endpoint.
+SCOPE_PROBES = {
+    "thermal": "/api/thermal/summary",
+    "alerts": "/api/alerts",
+    "business": "/api/business",
+    "debts": "/api/debts",
+    "audit": "/api/audit/logs",
+    "compliance": "/api/compliance/haccp/audit",
+    "ai": "/api/ai/peak-shaving/schedule",
+    "sync": "/api/sync/status",
+}
+
+
+def test_moi_vai_dang_nhap_duoc_va_nhan_dung_scopes(seeded_client: TestClient, tokens: dict[str, str]) -> None:
+    """13 vai deu phai dang nhap that qua HTTP duoc, khong chi ton tai trong enum.
+
+    `User.role` tung la `String(16)` trong khi 6/13 ten dai 23 ky tu. SQLite khong rang
+    buoc do dai nen seed van "chay", Postgres thi cat/tu choi - loi chi lo khi len prod.
+    """
+    for username, role, _, _ in DEMO_USERS:
+        body = _login(seeded_client, username).json()
+        assert body["access_token"], username
+
+        me = seeded_client.get("/api/auth/me", headers={"Authorization": f"Bearer {tokens[role.value]}"}).json()
+        assert me["role"] == role.value, username
+        assert me["scopes"] == scopes_for(role.value), username
+        assert me["scopes"], f"Vai {role.value} khong co scope nao -> frontend khong co trang dich de ve"
+
+
+def test_scope_da_cap_thi_endpoint_do_khong_duoc_403(seeded_client: TestClient, tokens: dict[str, str]) -> None:
+    """Chieu nguy hiem: `/api/auth/me` bao co scope ma goi API cua scope do thi 403.
+
+    Truoc day L6_HACCP_AUDITOR co `compliance` trong ROLE_SCOPES nhung bundle
+    `ComplianceRoles` khong liet ke L6 - vai chuyen kiem toan HACCP bi khoa khoi chinh
+    bao cao HACCP. Test nay bat loi do cho ca 13 vai x 8 scope ma khong phai liet ke tay.
+    """
+    for username, role, _, _ in DEMO_USERS:
+        headers = {"Authorization": f"Bearer {tokens[role.value]}"}
+        for scope in scopes_for(role.value):
+            path = SCOPE_PROBES.get(scope)
+            if path is None:
+                continue
+            status = seeded_client.get(path, headers=headers).status_code
+            assert status != 403, f"{role.value} co scope {scope} nhung {path} tra 403"
+            # Path ma sai thi assert 403 o tren van pass am tham (404 != 403).
+            assert status != 404, f"SCOPE_PROBES tro vao {path} khong ton tai - router that da doi"
+
+
+def test_l6_phat_hanh_duoc_chung_chi_haccp(seeded_client: TestClient, tokens: dict[str, str]) -> None:
+    """Nghiep vu gan voi vai tro: L6 la nguoi lap va ky chung nhan kiem toan chuoi lanh."""
+    payload = {"batch_name": "Lô cá tra phi lê đông lạnh", "hours": 24}
+    headers = {"Authorization": f"Bearer {tokens['L6_HACCP_AUDITOR']}"}
+    response = seeded_client.post("/api/compliance/haccp/certificate", json=payload, headers=headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "ISSUED"
+
+
+def test_vai_khong_phan_su_bi_chan_khoi_bao_cao_haccp_esg(seeded_client: TestClient, tokens: dict[str, str]) -> None:
+    """So lan vi pham nguong nhiet do khong phai thong tin cua khoi billing/kinh doanh.
+
+    Dung `AnyRole` cho hai endpoint nay thi ai dang nhap cung doc duoc bao cao kiem toan.
+    """
+    for role in ("L9_BILLING_SPECIALIST", "L10_SALES_EXECUTIVE", "L7_WAREHOUSE_DISPATCHER"):
+        headers = {"Authorization": f"Bearer {tokens[role]}"}
+        for path in ("/api/compliance/haccp/audit", "/api/compliance/esg/carbon-footprint?refrigerant_leak_kg=0"):
+            assert seeded_client.get(path, headers=headers).status_code == 403, f"{role} doc duoc {path}"
+
+
+def test_vai_khong_phan_su_bi_chan_khoi_nhat_ky_kiem_toan(seeded_client: TestClient, tokens: dict[str, str]) -> None:
+    for role in ("VANHANH", "L5_MAINTENANCE_ENGINEER", "L7_WAREHOUSE_DISPATCHER", "L10_SALES_EXECUTIVE"):
+        headers = {"Authorization": f"Bearer {tokens[role]}"}
+        for path in ("/api/audit/logs", "/api/audit/verify"):
+            assert seeded_client.get(path, headers=headers).status_code == 403, f"{role} doc duoc {path}"
+
+
+# --------------------------------------------------------------------------- #
+# Contract frontend: ma tran quyen phai trung khop hai dau
+# --------------------------------------------------------------------------- #
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_TYPES = REPO_ROOT / "frontend/src/types/api.ts"
+FRONTEND_SCOPES = REPO_ROOT / "frontend/src/lib/scopes.ts"
+FRONTEND_SCOPES_TEST = REPO_ROOT / "frontend/src/lib/scopes.test.ts"
+FRONTEND_APP = REPO_ROOT / "frontend/src/App.tsx"
+
+
+def _frontend(path: Path) -> str:
+    assert path.exists(), f"Khong thay {path.relative_to(REPO_ROOT)} - frontend da doi cau truc thu muc"
+    return path.read_text(encoding="utf-8")
+
+
+def _union(source: str, type_name: str, path: Path) -> set[str]:
+    """Doc cac gia tri cua `export type X = 'a' | 'b' | ...;`."""
+    match = re.search(rf"export type {type_name}\s*=\s*(.*?);", source, re.DOTALL)
+    assert match, f"Khong thay `export type {type_name}` trong {path.name}"
+    return set(re.findall(r"'([A-Za-z0-9_]+)'", match.group(1)))
+
+
+def test_frontend_role_scope_khop_backend() -> None:
+    """`Role`/`Scope` va ban sao ma tran quyen ben TS phai trung khop backend that.
+
+    `scopes.test.ts` giu mot BAN SAO cua `ROLE_SCOPES` de test menu ma khong can khoi dong
+    backend; ban sao do khong duoc TypeScript kiem tra cheo vi no la `Record<Role, Scope[]>`
+    hop le voi bat ky gia tri nao. Lech thi menu hien tab ma API tu choi (hoac nguoc lai:
+    API mo ma khong co duong vao).
+    """
+    types = _frontend(FRONTEND_TYPES)
+    assert _union(types, "Role", FRONTEND_TYPES) == {role.value for role in Role}
+    assert _union(types, "Scope", FRONTEND_TYPES) == set(ALL_SCOPES)
+
+    test_source = _frontend(FRONTEND_SCOPES_TEST)
+    copied_all = re.search(r"const ALL_SCOPES: Scope\[\] = \[(.*?)\];", test_source, re.DOTALL)
+    assert copied_all, "Khong thay `const ALL_SCOPES` trong scopes.test.ts - fixture da doi ten"
+    assert set(re.findall(r"'([a-z_]+)'", copied_all.group(1))) == set(ALL_SCOPES)
+
+    block = re.search(r"const ROLE_SCOPES: Record<Role, Scope\[\]> = \{(.*?)\n\};", test_source, re.DOTALL)
+    assert block, "Khong thay `const ROLE_SCOPES` trong scopes.test.ts - fixture da doi ten"
+
+    for role, expected in ROLE_SCOPES.items():
+        # Bat buoc giu dung mot dong cho moi vai: regex duoi day khong bat duoc fixture viet
+        # trai nhieu dong. Bao loi con hon la am tham bo qua mot vai tro roi test van xanh.
+        line = re.search(rf"^\s*{re.escape(role)}:\s*(.+?),?\s*$", block.group(1), re.MULTILINE)
+        assert line, f"scopes.test.ts phai co dung mot dong khai bao cho vai {role}"
+        raw = line.group(1).strip()
+        copied = list(ALL_SCOPES) if raw == "ALL_SCOPES" else re.findall(r"'([a-z_]+)'", raw)
+        assert set(copied) == set(expected), (
+            f"{role}: scopes.test.ts cap {sorted(set(copied))} nhung backend cap {sorted(expected)}"
+        )
+
+
+def test_frontend_routes_khop_router_that() -> None:
+    """Tab trong NavBar phai khop 1-1 voi route that trong `App.tsx`.
+
+    Thua thi NavBar hien tab dan thang toi NotFoundPage; thieu thi page viet ra khong co
+    duong vao. `PAGED_SCOPES` ben TS cung phai dung bang tap route do de bat invariant
+    "moi vai con it nhat mot tab" khong bi vo nghia hoa.
+    """
+    declared = re.findall(r"\{\s*path:\s*'(/[^']+)'[^\n]*?scope:\s*'([a-z_]+)'", _frontend(FRONTEND_SCOPES))
+    routed = re.findall(r'path="(/[^"]+)"\s+element=\{\s*<RequireScope scope="([a-z_]+)"', _frontend(FRONTEND_APP))
+
+    assert declared, "Khong doc duoc ROUTES trong scopes.ts - dinh dang da doi"
+    assert routed, "Khong doc duoc RequireScope trong App.tsx - dinh dang da doi"
+    assert declared == routed, f"ROUTES {declared} lech voi App.tsx {routed}"
+    assert {scope for _, scope in declared} <= set(ALL_SCOPES)
 
 
 # --------------------------------------------------------------------------- #

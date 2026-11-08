@@ -23,9 +23,9 @@ from app.models import (
     MonthlyTarget,
     Receivable,
     ReceivableStatus,
+    Role,
     ServiceOrder,
     TariffBand,
-    TariffBandCode,
     TelemetrySample,
     User,
 )
@@ -75,10 +75,19 @@ def test_seed_tao_du_cac_bang_nghiep_vu(seeded: Session):
 # --------------------------------------------------------------------------- #
 # Nguoi dung
 # --------------------------------------------------------------------------- #
-def test_co_du_3_vai_tro(seeded: Session):
+def test_seed_du_moi_vai_tro_trong_role_enum(seeded: Session):
+    """He thong khong co endpoint tao user, nen DEMO_USERS la nguon DUY NHAT cua tai khoan.
+
+    Thieu mot vai o day thi vai do khong the ton tai luc chay: `ROLE_SCOPES` va cac bundle
+    `require_roles(...)` tro thanh cau hinh chet, va loi phan quyen cua vai do khong bao
+    gio bi bat boi bat ky test nao di qua HTTP.
+    """
+    assert {role.value for role in Role} == {role.value for _, role, _, _ in DEMO_USERS}
+
     users = {u.username: u for u in seeded.scalars(select(User))}
-    assert {u.role for u in users.values()} == {role.value for _, role, _, _ in DEMO_USERS}
+    assert {u.role for u in users.values()} == {role.value for role in Role}
     assert set(users) == {username for username, _, _, _ in DEMO_USERS}
+    assert len(users) == len(Role), "Hai tai khoan dung chung mot username hoac mot vai duoc seed hai lan"
 
 
 def test_mat_khau_duoc_bam_khong_luu_plaintext(seeded: Session):
@@ -235,6 +244,22 @@ def test_tong_hoa_don_bang_tien_dien_cong_phi_quan_ly(seeded: Session):
         assert inv.period_end > inv.period_start
 
 
+def test_tien_dien_nam_tron_bieu_gia_evn(seeded: Session):
+    """Tien dien phai nam trong [delta x gia re nhat, delta x gia dat nhat] cua bieu gia.
+
+    Chan ca hai chieu: tinh THIEU (telemetry chi phu mot phan ky roi lay nguyen xi phan
+    do duoc lam phan chia) va gan SAI khung gio (doi ca delta sang mot khung gia re).
+    """
+    prices = [b.price_vnd_per_kwh for b in seeded.scalars(select(TariffBand))]
+    assert prices, "Bieu gia EVN rong"
+    low, high = min(prices), max(prices)
+    for inv in seeded.scalars(select(BilledInvoice)):
+        assert low * inv.total_kwh - 1 <= inv.electricity_vnd <= high * inv.total_kwh + 1, (
+            f"Hoa don {inv.id}: {inv.electricity_vnd:,d} VND cho {inv.total_kwh:,.2f} kWh "
+            f"nam ngoai khoang {low:,d}-{high:,d} VND/kWh cua bieu gia"
+        )
+
+
 def test_hoa_don_khong_trung_ky(seeded: Session):
     periods = [
         (i.tenant_code, i.period_start, i.period_end) for i in seeded.scalars(select(BilledInvoice))
@@ -311,15 +336,38 @@ def test_canh_bao_duoc_sinh_ra_tu_telemetry_that(seeded: Session):
 
     rules = {r.id: r for r in seeded.scalars(select(AlarmRule))}
     for alert in raised:
+        # KHONG duoc `continue` khi rule_id is None: ban cu viet tay 4 alert `rule_id=None`
+        # kem chuoi "da ve dan nong, COP phuc hoi 3.02" chua tung xay ra, va chinh dong
+        # `continue` o day da cho chung lot qua. Moi alert seed ra phai truy vet duoc
+        # ve mot rule va mot mau telemetry vi pham that.
         rule = rules.get(alert.rule_id)
-        if rule is None:
-            continue
+        assert rule is not None, f"Alert {alert.id} khong sinh tu rule nao (rule_id=None): {alert.message!r}"
         matching = [
             s
             for s in samples
             if s.equipment_id == alert.equipment_id and rule.is_breached(getattr(s, alert.metric, None))
         ]
         assert matching, f"Alert {alert.id} bao vi pham {alert.metric} nhung telemetry khong co mau nao vi pham"
+
+
+def test_lich_su_canh_bao_da_dong_va_xac_nhan_dung_trinh_tu(seeded: Session):
+    """Man hinh Canh bao can lich su, nhung lich su do phai theo dung vong doi that.
+
+    `acknowledged_at` ngoai khoang [raised_at, cleared_at] nghia la "xac nhan sau khi su
+    co da dong" - vo ly ve nghiep vu va hien sai tren UI, ma van khong gay loi nao de
+    test khac bat duoc.
+    """
+    closed = [a for a in seeded.scalars(select(Alert)) if a.cleared_at is not None]
+    assert closed, "Seed phai tao it nhat mot canh bao da dong de demo tab lich su"
+    for alert in closed:
+        assert alert.cleared_at >= alert.raised_at, f"Alert {alert.id} dong truoc khi phat sinh"
+        if alert.acknowledged_at is None:
+            continue
+        assert alert.raised_at <= alert.acknowledged_at <= alert.cleared_at, (
+            f"Alert {alert.id} xac nhan luc {alert.acknowledged_at} nam ngoai khoang su co "
+            f"[{alert.raised_at}, {alert.cleared_at}]"
+        )
+        assert alert.acknowledged_by_id is not None, f"Alert {alert.id} co thoi diem xac nhan ma khong co nguoi xac nhan"
 
 
 def test_reset_xoa_het_du_lieu_nghiep_vu(seeded: Session):

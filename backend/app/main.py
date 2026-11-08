@@ -21,6 +21,7 @@ from .config import get_settings
 from .database import SessionLocal, create_all, dispose
 from .models import Role, User
 from .routers import ai, alerts, audit, auth, business, compliance, dashboard, debts, ingest, sync, thermal
+from .schemas import HealthResponse
 from .security import scopes_for
 from .seed import seed_if_empty
 from .services import billing, thermal as thermal_service
@@ -90,7 +91,7 @@ for module in (auth.router, dashboard.router, thermal.router, business.router, d
     app.include_router(module)
 
 
-@app.get("/api/health", tags=["system"])
+@app.get("/api/health", tags=["system"], response_model=HealthResponse)
 def health_check() -> dict:
     """Khong xac thuc - dung cho Docker/K8s healthcheck."""
     session: Session = SessionLocal()

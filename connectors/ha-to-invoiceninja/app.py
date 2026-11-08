@@ -433,13 +433,20 @@ def build_public_notes(invoice: Dict[str, Any], tenant_code: str) -> str:
         f"Tong cong: {int(invoice.get('total_vnd') or 0):,d} VND",
     ]
 
-    if breakdown.get("split_method") == "hours_estimate":
+    split_method = breakdown.get("split_method")
+    if split_method == "hours_estimate":
         lines.append(
             "LUU Y: Phan bo kWh theo 3 khung gio la UOC LUONG theo ty le so gio, "
             "vi ky nay khong du du lieu cong to theo tung phut. Tong kWh va tong tien "
             "van la so that; chi phan chia theo khung gio la uoc luong."
         )
-    elif breakdown.get("split_method") == "telemetry":
+    elif split_method == "telemetry_scaled":
+        lines.append(
+            "LUU Y: Du lieu cong to theo phut khong phu het ky nay. Tong kWh va tong tien "
+            "lay theo chi so cong to hoa don (so that); ty le giua cac khung gio la SUY RA "
+            "tu phan da do duoc."
+        )
+    elif split_method == "telemetry":
         lines.append("Phan bo kWh theo khung gio tinh tu du lieu cong to do duoc.")
 
     for warning in breakdown.get("warnings") or []:

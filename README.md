@@ -105,6 +105,7 @@ Khởi chạy stack ứng dụng cốt lõi (FastAPI Backend + PostgreSQL + Graf
 ```
 - **ThingsBoard IIoT:** [http://localhost:8083](http://localhost:8083)
 - **ERPNext v15:** [http://localhost:8000](http://localhost:8000)
+- **Grafana Hướng A:** [http://localhost:3003](http://localhost:3003) (biến `GRAFANA_PORT_A`)
 - **Connector A Webhook:** [http://localhost:8081/health](http://localhost:8081/health)
 
 ### Hướng B: ESCO & Cho thuê kho (Home Assistant + Invoice Ninja + Twenty)

@@ -11,9 +11,8 @@ Kiem chung:
 from __future__ import annotations
 
 import sys
-import tempfile
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -26,8 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.database import SessionLocal
-from app.main import app
-from app.models import Equipment, Site, SyncBatch, TelemetrySample, User, Role
+from app.models import Equipment, Site, SyncBatch, TelemetrySample
 from app.timeutil import utcnow
 
 
@@ -51,9 +49,24 @@ def test_sync_push_requires_api_key(client: TestClient):
     assert res.status_code == 401
 
 
+def test_sync_push_requires_registered_site(seeded_client: TestClient, connector_headers: dict[str, str]):
+    """Site la master data. Edge khong duoc tu sinh ra chi nhanh bang cach day du lieu len."""
+    res = seeded_client.post(
+        "/api/sync/push",
+        json={
+            "site_code": f"SITE-GIA-{uuid.uuid4().hex[:6]}",
+            "batch_id": f"BATCH-{uuid.uuid4().hex[:8]}",
+            "records": [],
+        },
+        headers=connector_headers,
+    )
+    assert res.status_code == 404
+    assert "chua duoc dang ky" in res.json()["detail"]
+
+
 def test_sync_push_ingests_telemetry_and_records_batch(seeded_client: TestClient, connector_headers: dict[str, str]):
     batch_id = f"BATCH-{uuid.uuid4().hex[:8]}"
-    site_code = f"SITE-{uuid.uuid4().hex[:6]}"
+    site_code = "SITE-NHA-A"
 
     payload = {
         "site_code": site_code,
@@ -62,7 +75,7 @@ def test_sync_push_ingests_telemetry_and_records_batch(seeded_client: TestClient
         "records": [
             {
                 "type": "telemetry",
-                "equipment_code": "KD01",
+                "equipment_code": "KHO_DONG_01",
                 "temperature_c": -18.5,
                 "pressure_bar": 12.4,
                 "power_kw": 45.2,
@@ -81,6 +94,7 @@ def test_sync_push_ingests_telemetry_and_records_batch(seeded_client: TestClient
     assert data["status"] == "ok"
     assert data["batch_id"] == batch_id
     assert data["processed"] == 1
+    assert data["rejected"] == []
 
     # Kiem tra trong DB
     session: Session = SessionLocal()
@@ -94,13 +108,82 @@ def test_sync_push_ingests_telemetry_and_records_batch(seeded_client: TestClient
         assert saved_batch is not None
         assert saved_batch.site_code == site_code
         assert saved_batch.records_count == 1
+
+        # COP client tu khai (3.42) phai bi bo: Cloud tinh lai tu Q_o / N_e.
+        # Mau nay khong co cooling_capacity_kw nen COP that su la "khong xac dinh duoc".
+        # Tuong tu, hieu suat dot chi danh cho lo hoi - kho dong khong duoc ghi.
+        equipment = session.scalars(select(Equipment).where(Equipment.code == "KHO_DONG_01")).first()
+        assert equipment is not None
+        saved_sample = session.scalars(
+            select(TelemetrySample)
+            .where(TelemetrySample.equipment_id == equipment.id)
+            .order_by(TelemetrySample.ts.desc())
+            .limit(1)
+        ).first()
+        assert saved_sample is not None
+        assert saved_sample.cop is None
+        assert saved_sample.efficiency_pct is None
+        assert saved_sample.temperature_c == -18.5
     finally:
         session.close()
 
 
+def test_sync_push_rejects_unregistered_equipment_with_reason(
+    seeded_client: TestClient, connector_headers: dict[str, str]
+):
+    """Ban ghi bi tu choi phai tra ve kem ly do, khong duoc bo qua trong im lang."""
+    batch_id = f"BATCH-{uuid.uuid4().hex[:8]}"
+    res = seeded_client.post(
+        "/api/sync/push",
+        json={
+            "site_code": "SITE-NHA-B",
+            "batch_id": batch_id,
+            "records": [
+                {"type": "telemetry", "equipment_code": "MAY_LA", "temperature_c": -10.0,
+                 "timestamp": utcnow().isoformat()},
+                {"type": "telemetry", "equipment_code": "KHO_DONG_01", "temperature_c": -19.0,
+                 "timestamp": utcnow().isoformat()},
+            ],
+        },
+        headers=connector_headers,
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["processed"] == 1
+    assert len(data["rejected"]) == 1
+    assert data["rejected"][0]["index"] == 0
+    assert data["rejected"][0]["equipment_code"] == "MAY_LA"
+    assert "chua duoc dang ky" in data["rejected"][0]["error"]
+
+
+def test_sync_push_skips_duplicate_sample_across_batches(
+    seeded_client: TestClient, connector_headers: dict[str, str]
+):
+    """Trung (equipment_id, ts) xuyen batch -> bo qua, khong doi ts de lach UniqueConstraint."""
+    moment = utcnow().isoformat()
+    record = {"type": "telemetry", "equipment_code": "KHO_DONG_01", "temperature_c": -19.0, "timestamp": moment}
+
+    first = seeded_client.post(
+        "/api/sync/push",
+        json={"site_code": "SITE-NHA-C", "batch_id": f"BATCH-{uuid.uuid4().hex[:8]}", "records": [record]},
+        headers=connector_headers,
+    )
+    assert first.json()["processed"] == 1
+
+    second = seeded_client.post(
+        "/api/sync/push",
+        json={"site_code": "SITE-NHA-C", "batch_id": f"BATCH-{uuid.uuid4().hex[:8]}", "records": [record]},
+        headers=connector_headers,
+    )
+    body = second.json()
+    assert second.status_code == 200
+    assert body["processed"] == 0
+    assert body["duplicates_skipped"] == 1
+
+
 def test_sync_idempotency_prevents_duplicate_processing(seeded_client: TestClient, connector_headers: dict[str, str]):
     batch_id = f"BATCH-DUP-{uuid.uuid4().hex[:8]}"
-    site_code = "SITE-BAC-NINH"
+    site_code = "SITE-NHA-A"
 
     payload = {
         "site_code": site_code,
@@ -109,7 +192,7 @@ def test_sync_idempotency_prevents_duplicate_processing(seeded_client: TestClien
         "records": [
             {
                 "type": "telemetry",
-                "equipment_code": "KD01",
+                "equipment_code": "KHO_DONG_01",
                 "temperature_c": -20.1,
                 "timestamp": utcnow().isoformat(),
             }
@@ -190,7 +273,7 @@ def test_edge_sync_agent_outbox_queue_integration(seeded_client: TestClient, mon
 
     db_path = tmp_path / "test_outbox.db"
     agent = EdgeSyncAgent(
-        site_code="SITE-CAN-THO",
+        site_code="SITE-NHA-A",
         cloud_url="http://testserver",
         api_key="test-connector-api-key",
         db_path=db_path,
@@ -228,3 +311,59 @@ def test_edge_sync_agent_outbox_queue_integration(seeded_client: TestClient, mon
     stats_after = agent.get_stats()
     assert stats_after["pending_count"] == 0
     assert stats_after["synced_count"] == 3
+
+    # Lan flush dau tien chua tung do duoc do tre nao, nen KHONG duoc bao ve Cloud
+    # mot con so 0ms/45ms gia mao. Cloud giu nguyen gia tri cu (0 = "chua tung do").
+    session: Session = SessionLocal()
+    try:
+        site = session.scalars(select(Site).where(Site.code == "SITE-NHA-A")).first()
+        assert site is not None
+        assert site.sync_status == "ONLINE"
+        assert site.last_sync_at is not None
+        assert site.sync_latency_ms == 0
+        # Outbox that su rong -> pending_records_count ve 0, khong phai gia dinh.
+        assert site.pending_records_count == 0
+    finally:
+        session.close()
+
+
+def test_edge_sync_agent_keeps_rejected_rows_pending(seeded_client: TestClient, monkeypatch, tmp_path: Path):
+    """Cloud tu choi ban ghi nao thi Edge phai giu ban ghi do de gui lai.
+
+    Neu danh dau synced cho ban ghi bi tu choi, du lieu mat vinh vien o bien
+    va khong con dau hieu nao de phat hien.
+    """
+    from clients.edge_sync_agent.edge_agent import EdgeSyncAgent
+
+    agent = EdgeSyncAgent(
+        site_code="SITE-NHA-B",
+        cloud_url="http://testserver",
+        api_key="test-connector-api-key",
+        db_path=tmp_path / "test_outbox_reject.db",
+    )
+    t_now = utcnow()
+    agent.enqueue_record({"equipment_code": "KHO_DONG_01", "temperature_c": -19.0, "ts": t_now.isoformat()})
+    agent.enqueue_record({"equipment_code": "MAY_KHONG_CO_THAT", "temperature_c": -10.0, "ts": t_now.isoformat()})
+
+    def mock_post(url, json=None, headers=None, timeout=None):
+        class MockResponse:
+            def __init__(self, resp):
+                self.status_code = resp.status_code
+                self._json = resp.json()
+                self.text = resp.text
+
+            def json(self):
+                return self._json
+
+        return MockResponse(seeded_client.post("/api/sync/push", json=json, headers=headers))
+
+    monkeypatch.setattr("requests.post", mock_post)
+
+    flush_result = agent.flush_batch()
+    assert flush_result["status"] == "partial"
+    assert flush_result["flushed"] == 1
+    assert flush_result["rejected"] == 1
+
+    stats = agent.get_stats()
+    assert stats["synced_count"] == 1
+    assert stats["pending_count"] == 1

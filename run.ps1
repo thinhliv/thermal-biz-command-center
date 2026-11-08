@@ -88,7 +88,7 @@ switch ($Action) {
         Write-Host "-> Khoi chay Huong A (ThingsBoard + ERPNext + Grafana + Connector A)..." -ForegroundColor Green
         Invoke-Compose $ComposeEnterprise @("up", "-d")
         $tbPort = Get-EnvValue "TB_PORT" "8083"
-        $grafPort = Get-EnvValue "GRAFANA_PORT" "3000"
+        $grafPort = Get-EnvValue "GRAFANA_PORT_A" "3003"
         Write-Host "Da khoi chay! Grafana: http://localhost:$grafPort | ThingsBoard: http://localhost:$tbPort" -ForegroundColor Yellow
     }
 

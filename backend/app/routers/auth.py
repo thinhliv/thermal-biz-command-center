@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from ..database import get_session
 from ..models import User
 from ..schemas import ChangePasswordRequest, LoginRequest, LoginResponse, UserPublic
 from ..security import (
+    client_ip,
     create_access_token,
     get_current_user,
     hash_password,
@@ -36,7 +37,7 @@ def _public(user: User) -> UserPublic:
 
 
 @router.post("/login", response_model=LoginResponse)
-def login(payload: LoginRequest, session: Session = Depends(get_session)) -> LoginResponse:
+def login(payload: LoginRequest, request: Request, session: Session = Depends(get_session)) -> LoginResponse:
     user = session.scalars(select(User).where(User.username == payload.username)).first()
     hashed = user.password_hash if user else _DUMMY_HASH
     password_ok = verify_password(payload.password, hashed)
@@ -58,6 +59,7 @@ def login(payload: LoginRequest, session: Session = Depends(get_session)) -> Log
         resource_type="user",
         resource_id=str(user.id),
         details={"username": user.username, "role": user.role},
+        ip_address=client_ip(request),
     )
     session.commit()
     return LoginResponse(access_token=token, expires_in_minutes=expires_in, user=_public(user))
@@ -71,6 +73,7 @@ def me(user: User = Depends(get_current_user)) -> UserPublic:
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
 def change_password(
     payload: ChangePasswordRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> None:
@@ -84,6 +87,7 @@ def change_password(
             action="CHANGE_PASSWORD",
             resource_type="user",
             resource_id=str(user.id),
+            ip_address=client_ip(request),
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

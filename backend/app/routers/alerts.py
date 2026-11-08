@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..database import get_session
 from ..models import Alert, Severity, User
 from ..schemas import AcknowledgeRequest, AlertPublic
-from ..security import ThermalRoles
+from ..security import ThermalRoles, client_ip
 from ..services import thermal
 from ..services.audit import record_audit
 from ..timeutil import utcnow
@@ -74,6 +74,7 @@ def alert_stats(
 @router.post("/{alert_id}/acknowledge", response_model=AlertPublic)
 def acknowledge(
     alert_id: int,
+    request: Request,
     payload: AcknowledgeRequest | None = None,
     session: Session = Depends(get_session),
     user: User = Depends(ThermalRoles),
@@ -90,8 +91,10 @@ def acknowledge(
 
     alert.acknowledged_at = utcnow()
     alert.acknowledged_by_id = user.id
-    if payload and payload.note:
-        alert.message = f"{alert.message} | Ghi chu: {payload.note}"[:500]
+    # Ghi chu cua nguoi xac nhan di vao nhat ky kiem toan (co chu ky, bat bien) ben duoi,
+    # KHONG noi vao alert.message: message la mo ta su co ma rule sinh ra va la bang chung
+    # HACCP, ghi de no thi khong con doi chieu duoc voi rule, va chuoi 500 ky tu cat ngam
+    # ghi chu ma khong bao loi.
     record_audit(
         session,
         user,
@@ -99,6 +102,7 @@ def acknowledge(
         resource_type="alert",
         resource_id=str(alert.id),
         details={"severity": alert.severity, "metric": alert.metric, "note": payload.note if payload else None},
+        ip_address=client_ip(request),
     )
     session.commit()
     session.refresh(alert)
@@ -108,6 +112,7 @@ def acknowledge(
 @router.post("/{alert_id}/clear", response_model=AlertPublic)
 def clear(
     alert_id: int,
+    request: Request,
     session: Session = Depends(get_session),
     user: User = Depends(ThermalRoles),
 ) -> dict:
@@ -129,6 +134,7 @@ def clear(
         resource_type="alert",
         resource_id=str(alert.id),
         details={"severity": alert.severity, "metric": alert.metric},
+        ip_address=client_ip(request),
     )
     session.commit()
     session.refresh(alert)

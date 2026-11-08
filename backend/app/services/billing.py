@@ -3,10 +3,12 @@
 Cong thuc theo thiet ke Huong B:
     Tien dien = delta_kWh x Don gia EVN (theo tung khung gio) + Phi quan ly
 
-Ba loi nghiep vu duoc sua o day:
+Bon loi nghiep vu duoc sua o day:
 1. Tinh tien theo DELTA kWh cua ky, khong phai chi so cong to TICH LUY.
 2. Ap gia theo 3 khung gio (cao diem / binh thuong / thap diem), khong mot gia duy nhat.
 3. Tu choi (khong "boc" ra so lieu) khi du lieu doc cong to khong hop le.
+4. Tong kWh chia theo 3 khung gio LUON bang delta cua cong to hoa don: telemetry chi
+   quyet dinh ty le giua cac khung, khong duoc quyet dinh tong so tien.
 """
 
 from __future__ import annotations
@@ -18,9 +20,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..models import BilledInvoice, MeterReading, TariffBand, TariffBandCode, TelemetrySample
+from ..timeutil import utctoday
 
 #: He so an toan khi chan delta kWh bat thuong so voi cong suat dat cua thiet bi
 PLAUSIBILITY_FACTOR = 1.5
+
+#: Sai lech kWh chap nhan duoc giua tong telemetry do duoc va delta cua cong to hoa don.
+#: Nam trong nguong nay thi coi nhu telemetry da phu het ky, chi con le lam tron.
+SPLIT_RECONCILE_TOLERANCE_KWH = 0.5
 
 
 class BillingError(Exception):
@@ -36,8 +43,14 @@ class BillingError(Exception):
 # Bieu gia
 # --------------------------------------------------------------------------- #
 def active_bands(session: Session, at: date | datetime | None = None) -> list[TariffBand]:
-    """Lay bo khung gio co hieu luc tai thoi diem `at` (lay effective_from gan nhat)."""
-    on = (at.date() if isinstance(at, datetime) else at) or date.today()
+    """Lay bo khung gio co hieu luc tai thoi diem `at` (lay effective_from gan nhat).
+
+    Mac dinh la hom nay theo UTC (`utctoday()`), KHONG theo `date.today()`: toan bo he
+    thong luu datetime naive-UTC (xem timeutil.py), nen lay ngay theo gio may chu thi
+    bieu gia bi lech dung luc nua dem - va lech theo mui gio dat server, tuc la dev o
+    VN (+07) va prod dat o UTC se chon hai bo khung gio khac nhau trong 7 tieng moi ngay.
+    """
+    on = (at.date() if isinstance(at, datetime) else at) or utctoday()
     stmt = (
         select(TariffBand)
         .where(TariffBand.is_active.is_(True), TariffBand.effective_from <= on)
@@ -147,17 +160,29 @@ def validate_delta(
     return ReadingValidation(delta_kwh=round(delta, 3), warnings=warnings)
 
 
-def split_from_telemetry(
+@dataclass(frozen=True)
+class MeasuredSplit:
+    """Phan chia kWh DO DUOC tu telemetry, kem doan thoi gian ma telemetry thuc su phu."""
+
+    kwh: dict[str, float]
+    covered_seconds: float
+    sample_count: int
+
+
+def measured_split(
     session: Session,
     equipment_id: int,
     start: datetime,
     end: datetime,
     bands: list[TariffBand],
-) -> dict[str, float] | None:
+) -> MeasuredSplit | None:
     """Chia delta kWh that theo 3 khung gio, dung chi so cong to tich luy trong telemetry.
 
-    Tra ve None khi khong du du lieu (can < 2 mau co energy_kwh_cumulative) - nguoi goi
-    se phai dung phuong phap uoc luong theo gio va noi ro dieu do.
+    Tra ve None khi khong du du lieu (can < 2 mau co energy_kwh_cumulative).
+
+    `covered_seconds` la doan tu mau dau den mau cuoi. Telemetry co the chi phu MOT PHAN
+    cua ky (edge agent mat ket noi, hoac ky con dang chay), nen tong o day khong duoc
+    phep coi la tong kWh cua ca ky - phai doi chieu voi delta cua cong to hoa don.
     """
     stmt = (
         select(TelemetrySample)
@@ -181,7 +206,28 @@ def split_from_telemetry(
             continue
         midpoint = prev.ts + (cur.ts - prev.ts) / 2
         split[band_of(midpoint, bands)] += delta
-    return {code: round(kwh, 3) for code, kwh in split.items()}
+    return MeasuredSplit(
+        kwh={code: round(kwh, 3) for code, kwh in split.items()},
+        covered_seconds=(samples[-1].ts - samples[0].ts).total_seconds(),
+        sample_count=len(samples),
+    )
+
+
+def split_from_telemetry(
+    session: Session,
+    equipment_id: int,
+    start: datetime,
+    end: datetime,
+    bands: list[TariffBand],
+) -> dict[str, float] | None:
+    """Phan chia kWh theo khung gio tu telemetry. Tra ve DUNG PHAN DO DUOC, khong tu suy ra ca ky.
+
+    Dung cho bao cao tieu thu noi bo (`equipment_energy_kwh`). Con de tinh hoa don thi
+    phai di qua `reconcile_split`: tong o day co the nho hon nhieu so voi delta that cua
+    cong to khi telemetry khong phu het ky, va hoa don thi khong duoc phep tinh thieu.
+    """
+    measured = measured_split(session, equipment_id, start, end, bands)
+    return measured.kwh if measured is not None else None
 
 
 def split_from_hours(total_kwh: float, start: datetime, end: datetime, bands: list[TariffBand]) -> dict[str, float]:
@@ -196,6 +242,96 @@ def split_from_hours(total_kwh: float, start: datetime, end: datetime, bands: li
         return {TariffBandCode.NORMAL.value: round(total_kwh, 3)}
     split = {code: total_kwh * (mins / covered) for code, mins in minutes.items()}
     return {code: round(kwh, 3) for code, kwh in split.items()}
+
+
+def _scale_split_to_total(split: dict[str, float], total_kwh: float) -> dict[str, float]:
+    """Giun hinh dang da do ve dung `total_kwh`, va dam bao tong 3 khung bang `total_kwh` that su.
+
+    Lam tron 3 so rieng re con le vai phan nghin kWh so voi tong; phan le duoc cong vao
+    khung lon nhat de `sum(kwh_by_band) == total_kwh` dung bang so, khong chi "gan bang".
+    """
+    measured = sum(split.values())
+    if measured <= 0:
+        return {code.value: 0.0 for code in TariffBandCode}
+    factor = total_kwh / measured
+    scaled = {code: round(kwh * factor, 3) for code, kwh in split.items()}
+    residue = round(round(total_kwh, 3) - sum(scaled.values()), 3)
+    if abs(residue) >= 0.001:
+        largest = max(scaled, key=lambda code: scaled[code])
+        scaled[largest] = round(scaled[largest] + residue, 3)
+    return scaled
+
+
+@dataclass(frozen=True)
+class SplitDecision:
+    """Cach da chia delta kWh cua ky theo 3 khung gio, kem phuong phap de khai bao trung thuc."""
+
+    kwh: dict[str, float]
+    method: str
+    warnings: list[str]
+    covered_seconds: float | None
+
+
+def reconcile_split(
+    session: Session,
+    equipment_id: int | None,
+    delta_kwh: float,
+    period_start: datetime,
+    period_end: datetime,
+    bands: list[TariffBand],
+) -> SplitDecision:
+    """Chia delta kWh cua cong to hoa don theo 3 khung gio EVN.
+
+    `delta_kwh` la so DUY NHAT duoc phep ra tien: no den tu 2 lan doc cong to cua ca ky.
+    Telemetry theo phut chi dung de lay HINH DANG (ty le giua cac khung gio). Vi vay moi
+    nhanh deu phai thoa `sum(split) == delta_kwh`. Truoc day hoa don lay nguyen xi phan
+    telemetry do duoc, nen khi telemetry chi phu vai gio trong ky thi tien dien tinh thieu
+    hon hang chuc lan so voi dong ho - khach hang bi tinh thieu ma khong he co canh bao.
+
+    Ba nhanh, deu ghi ro phuong phap de nguoi dung biet so nao la do, so nao la suy ra:
+      telemetry         telemetry phu het ky, tong do duoc khop delta cong to
+      telemetry_scaled  telemetry chi phu mot phan -> giun ty le da do len delta that
+      hours_estimate    khong co telemetry dung duoc -> chia theo ty le so gio cua khung
+    """
+    fallback = SplitDecision(
+        kwh=split_from_hours(delta_kwh, period_start, period_end, bands),
+        method="hours_estimate",
+        warnings=[],
+        covered_seconds=None,
+    )
+    if equipment_id is None:
+        return fallback
+
+    measured = measured_split(session, equipment_id, period_start, period_end, bands)
+    if measured is None:
+        return fallback
+
+    measured_total = sum(measured.kwh.values())
+    if measured_total <= 0:
+        # Telemetry noi "khong tieu thu" trong khi cong to hoa don van chay: hai nguon mau
+        # thuan nhau. Khong duoc lay hinh dang toan 0 (tien dien = 0), ve uoc luong theo gio.
+        return fallback
+
+    if abs(delta_kwh - measured_total) <= SPLIT_RECONCILE_TOLERANCE_KWH:
+        method, warnings = "telemetry", []
+    else:
+        covered_hours = measured.covered_seconds / 3600
+        period_hours = (period_end - period_start).total_seconds() / 3600
+        pct = (covered_hours / period_hours * 100) if period_hours > 0 else 0.0
+        method = "telemetry_scaled"
+        warnings = [
+            f"Telemetry chi phu {covered_hours:g} / {period_hours:g} gio cua ky ({pct:.1f}%): "
+            f"do duoc {measured_total:,.2f} kWh trong khi cong to hoa don tang {delta_kwh:,.2f} kWh. "
+            "Tong kWh va tong tien lay theo cong to; ty le giua cac khung gio la SUY RA tu "
+            "phan do duoc, khong phai so do truc tiep cho ca ky.",
+        ]
+
+    return SplitDecision(
+        kwh=_scale_split_to_total(measured.kwh, delta_kwh),
+        method=method,
+        warnings=warnings,
+        covered_seconds=measured.covered_seconds,
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -249,14 +385,9 @@ def build_invoice(
         raise BillingError("Chua cau hinh bieu gia EVN (bang tariff_bands rong).", code="no_tariff")
     prices = band_prices(bands)
 
-    split: dict[str, float] | None = None
-    split_method = "hours_estimate"
-    if equipment_id is not None:
-        split = split_from_telemetry(session, equipment_id, period_start, period_end, bands)
-        if split is not None:
-            split_method = "telemetry"
-    if split is None:
-        split = split_from_hours(delta_kwh, period_start, period_end, bands)
+    split_decision = reconcile_split(session, equipment_id, delta_kwh, period_start, period_end, bands)
+    split = split_decision.kwh
+    warnings = [*validation.warnings, *split_decision.warnings]
 
     elec_vnd = electricity_cost(split, prices)
     service_vnd = int(round(delta_kwh * service_rate_per_kwh))
@@ -288,8 +419,13 @@ def build_invoice(
         session.add(reading)
         session.flush()
     else:
+        # Doc lai cong to cua cung ky nay: cap nhat ca chi so lan phan chia theo khung gio,
+        # neu khong thi meter_readings se lech voi billed_invoices vua tinh lai.
         reading.reading_end_kwh = current_kwh
         reading.delta_kwh = delta_kwh
+        reading.peak_kwh = split.get(TariffBandCode.PEAK.value, 0.0)
+        reading.normal_kwh = split.get(TariffBandCode.NORMAL.value, 0.0)
+        reading.off_peak_kwh = split.get(TariffBandCode.OFF_PEAK.value, 0.0)
         session.flush()
 
     invoice = BilledInvoice(
@@ -305,12 +441,20 @@ def build_invoice(
         service_fee_vnd=service_vnd,
         total_vnd=total_vnd,
         breakdown={
-            "split_method": split_method,
+            "split_method": split_decision.method,
             "prices_vnd_per_kwh": prices,
             "reading_start_kwh": previous_kwh,
             "reading_end_kwh": current_kwh,
             "service_rate_per_kwh": service_rate_per_kwh,
-            "warnings": validation.warnings,
+            # Telemetry phu bao nhieu gi trong ky - de nguoi kiem toan biet phan chia theo
+            # khung gio la so do truc tiep hay la suy ra. None = ky nay khong co telemetry.
+            "telemetry_covered_hours": (
+                round(split_decision.covered_seconds / 3600, 3)
+                if split_decision.covered_seconds is not None
+                else None
+            ),
+            "period_hours": round(period_hours, 3),
+            "warnings": warnings,
         },
     )
     session.add(invoice)

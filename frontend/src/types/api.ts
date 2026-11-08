@@ -4,9 +4,42 @@
  * KETOAN sẽ không bao giờ nhận được `thermal_summary`.
  */
 
-export type Role = 'BGD' | 'VANHANH' | 'KETOAN';
+/**
+ * 13 vai: 3 vai truyen thong + ma tran L1-L10 Enterprise. Phai trung khop voi
+ * `class Role` trong `backend/app/models.py`; `test_frontend_role_scope_khop_backend`
+ * (backend) doc chinh file nay de bat lech.
+ */
+export type Role =
+  | 'BGD'
+  | 'VANHANH'
+  | 'KETOAN'
+  | 'L1_CHAIRMAN'
+  | 'L2_CEO'
+  | 'L3_TECHNICAL_DIRECTOR'
+  | 'L4_OPERATIONS_MANAGER'
+  | 'L5_MAINTENANCE_ENGINEER'
+  | 'L6_HACCP_AUDITOR'
+  | 'L7_WAREHOUSE_DISPATCHER'
+  | 'L8_CFO'
+  | 'L9_BILLING_SPECIALIST'
+  | 'L10_SALES_EXECUTIVE';
 
-export type Scope = 'overview' | 'thermal' | 'alerts' | 'business' | 'debts';
+/**
+ * 9 scope, trung khop voi `ALL_SCOPES` trong `backend/app/security.py`.
+ * `audit` / `compliance` / `ai` / `sync` da co endpoint nhung CHUA co trang rieng:
+ * chung duoc dung de gate o `RequireScope` khi them page, con `ROUTES` chi liet ke
+ * 5 tab da co man hinh that.
+ */
+export type Scope =
+  | 'overview'
+  | 'thermal'
+  | 'alerts'
+  | 'business'
+  | 'debts'
+  | 'audit'
+  | 'compliance'
+  | 'ai'
+  | 'sync';
 
 export type Severity = 'CRITICAL' | 'MAJOR' | 'WARNING' | 'INFO';
 

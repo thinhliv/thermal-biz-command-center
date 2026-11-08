@@ -11,7 +11,7 @@ Kiem chung:
 from __future__ import annotations
 
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -26,7 +26,6 @@ if str(PROJECT_ROOT) not in sys.path:
 from app.database import SessionLocal
 from app.models import Equipment, TelemetrySample
 from app.services.compliance import (
-    audit_haccp_compliance,
     calculate_esg_carbon_footprint,
     VIETNAM_GRID_EMISSION_FACTOR,
 )
@@ -119,7 +118,7 @@ def test_issue_haccp_certificate_api(seeded_client: TestClient, tokens: dict[str
 
 
 def test_esg_carbon_footprint_calculation(seeded: Session):
-    result = calculate_esg_carbon_footprint(seeded, days=30, refrigerant_leak_kg=5.0)
+    result = calculate_esg_carbon_footprint(seeded, days=30, refrigerant_leak_kg=5.0, refrigerant_code="R404A")
 
     assert result["reporting_period_days"] == 30
     assert result["grid_emission_factor_tco2_per_mwh"] == VIETNAM_GRID_EMISSION_FACTOR
@@ -130,12 +129,36 @@ def test_esg_carbon_footprint_calculation(seeded: Session):
 
     assert result["scope_2_indirect_tco2e"] > 0
     assert result["total_emissions_tco2e"] > result["scope_1_direct_tco2e"]
-    assert result["ai_avoided_emissions_tco2e"] > 0
+
+    # Khong truyen kich ban -> bao cao noi thang "chua mo hinh hoa", khong tu gan 12%.
+    assert result["ai_avoided_emissions_tco2e"] is None
+    assert result["ai_avoided_basis"] == "NOT_MODELLED"
+
+    scenario = calculate_esg_carbon_footprint(
+        seeded, days=30, refrigerant_leak_kg=5.0, refrigerant_code="R404A", ai_saving_scenario_pct=12.0
+    )
+    assert scenario["ai_avoided_emissions_tco2e"] > 0
+    assert scenario["ai_avoided_basis"] == "SCENARIO_PCT"
+    assert scenario["ai_saving_scenario_pct"] == 12.0
+    # Phat thai tranh duoc la con so tinh tu kich ban, khong duoc cong vao tong that.
+    assert scenario["total_emissions_tco2e"] == result["total_emissions_tco2e"]
+
+
+def test_esg_carbon_footprint_tu_choi_khi_thieu_moi_chat_hao_hut(seeded: Session):
+    """R404A (GWP 3922) va R134a (GWP 1430) chenh nhau 2.7 lan - khong duoc tu chon."""
+    with pytest.raises(ValueError, match="refrigerant_code"):
+        calculate_esg_carbon_footprint(seeded, days=30, refrigerant_leak_kg=5.0)
+
+    with pytest.raises(ValueError, match="GWP"):
+        calculate_esg_carbon_footprint(seeded, days=30, refrigerant_leak_kg=5.0, refrigerant_code="R-999")
 
 
 def test_get_esg_carbon_footprint_api(seeded_client: TestClient, tokens: dict[str, str]):
     headers = {"Authorization": f"Bearer {tokens['KETOAN']}"}
-    res = seeded_client.get("/api/compliance/esg/carbon-footprint?days=30&refrigerant_leak_kg=2.5", headers=headers)
+    res = seeded_client.get(
+        "/api/compliance/esg/carbon-footprint?days=30&refrigerant_leak_kg=2.5&refrigerant_code=R404A",
+        headers=headers,
+    )
     assert res.status_code == 200
     data = res.json()
 
@@ -143,3 +166,28 @@ def test_get_esg_carbon_footprint_api(seeded_client: TestClient, tokens: dict[st
     assert "scope_2_indirect_tco2e" in data
     assert "total_emissions_tco2e" in data
     assert data["refrigerant_loss_kg"] == 2.5
+
+
+def test_get_esg_carbon_footprint_api_chan_khai_sai_moi_chat(seeded_client: TestClient, tokens: dict[str, str]):
+    headers = {"Authorization": f"Bearer {tokens['BGD']}"}
+
+    # Co hao hut ma khong khai ma moi chat -> 400 kem danh sach doi xe that.
+    missing = seeded_client.get(
+        "/api/compliance/esg/carbon-footprint?days=30&refrigerant_leak_kg=2.5", headers=headers
+    )
+    assert missing.status_code == 400
+    assert "R404A" in missing.json()["detail"]
+
+    # Ma hop le nhung khong thiet bi nao trong doi xe dung -> 400, khong tinh ra so vo nghia.
+    unused = seeded_client.get(
+        "/api/compliance/esg/carbon-footprint?days=30&refrigerant_leak_kg=2.5&refrigerant_code=NH3",
+        headers=headers,
+    )
+    assert unused.status_code == 400
+
+    # Ma khong ton tai -> 400 (khong de ValueError lo ra thanh 500).
+    bogus = seeded_client.get(
+        "/api/compliance/esg/carbon-footprint?days=30&refrigerant_leak_kg=2.5&refrigerant_code=R-999",
+        headers=headers,
+    )
+    assert bogus.status_code == 400

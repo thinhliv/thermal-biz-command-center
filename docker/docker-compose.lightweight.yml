@@ -1,6 +1,5 @@
 # HUONG B: STACK DICH VU NANG LUONG TINH GON & CHO THUE KHO LANH (ESCO)
-# Home Assistant + Invoice Ninja + Grafana + Connector B
-# (Twenty CRM se duoc them o Dot 4 - hien chua co service nao)
+# Home Assistant + Invoice Ninja + Twenty CRM + Grafana + Connector B
 #
 # Tat ca secret doc tu `.env` o thu muc goc repo. Khoi chay bang:
 #   docker compose --env-file .env -f docker/docker-compose.lightweight.yml up -d
@@ -158,7 +157,8 @@ services:
     container_name: esco_grafana
     restart: unless-stopped
     ports:
-      # Dung GRAFANA_PORT_B (3001) de khong trung voi Grafana cua stack A
+      # GRAFANA_PORT_B rieng (3001): stack ung dung da giu GRAFANA_PORT (3000) va stack A
+      # giu GRAFANA_PORT_A (3003). Ba Grafana co the chay dong thoi tren mot may.
       - "${GRAFANA_PORT_B:-3001}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
@@ -167,10 +167,16 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: ${GRAFANA_ANONYMOUS_ENABLED:-false}
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_USERS_DEFAULT_THEME: dark
-      # provisioning/datasources/lightweight.yaml chi noi suy dung bien nay.
+      # provisioning/datasources/lightweight.yaml noi suy 3 bien nay TU MOI TRUONG CUA
+      # CONTAINER GRAFANA (khong phai tu .env cua host). Thieu bien nao thi Grafana thay
+      # bang chuoi rong -> datasource `invoiceninja_mysql` provision ra voi database/user
+      # rong va ca 26 panel cua dashboard esco-billing deu loi khi query.
+      # Gia tri mac dinh giong het gia tri mac dinh cua service ninja_db ben tren.
       # KHONG yeu cau TB_DB_PASSWORD / ERP_DB_PASSWORD: stack B khong chay ThingsBoard
       # hay ERPNext. Bat nguoi dung khai secret cua dich vu khong ton tai trong stack nay
       # la ly do khien ca stack khong len duoc ma chang lien quan gi toi loi that.
+      NINJA_DB_NAME: ${NINJA_DB_NAME:-ninja}
+      NINJA_DB_USER: ${NINJA_DB_USER:-ninja}
       NINJA_DB_PASSWORD: ${NINJA_DB_PASSWORD:?NINJA_DB_PASSWORD must be set in .env}
     volumes:
       - esco_grafana_data:/var/lib/grafana
@@ -191,19 +197,91 @@ services:
       start_period: 30s
 
   # 6. Twenty CRM (Lead & Kho Hop Dong ESCO)
+  #    Contract lay tu chinh ma nguon twenty-server (`config-variables.ts`) va
+  #    `packages/twenty-docker/docker-compose.yml` cua upstream. Ba bien KHONG co
+  #    @IsOptional() nen bat buoc phai co, thieu la server tu choi khoi dong:
+  #      PG_DATABASE_URL, REDIS_URL, APP_SECRET
+  #    Truoc day file nay chi set PG_DATABASE_URL -> container crash-loop vi thieu
+  #    APP_SECRET va REDIS_URL, ma log NestJS khong noi ro la thieu bien gi.
   twenty:
     image: twentycrm/twenty:latest
     container_name: esco_twenty
     restart: unless-stopped
+    # Migration cua Twenty chay luc khoi dong va co the lau; grace period ngan se
+    # kill container giua chung migration (upstream dat 120s).
+    stop_grace_period: 120s
     ports:
       - "${TWENTY_PORT:-3002}:3000"
     environment:
-      PG_DATABASE_URL: postgresql://${TWENTY_DB_USER:-twenty}:${TWENTY_DB_PASSWORD:-twenty_secret}@twenty_db:5432/${TWENTY_DB_NAME:-twenty}
+      NODE_PORT: 3000
+      PG_DATABASE_URL: postgresql://${TWENTY_DB_USER:-twenty}:${TWENTY_DB_PASSWORD:?TWENTY_DB_PASSWORD must be set in .env}@twenty_db:5432/${TWENTY_DB_NAME:-twenty}
       SERVER_URL: http://localhost:${TWENTY_PORT:-3002}
+      REDIS_URL: redis://twenty_redis:6379
+      # Khoa at-rest cho secret luu trong DB; ENCRYPTION_KEY khong set thi fallback ve day.
+      APP_SECRET: ${TWENTY_APP_SECRET:?TWENTY_APP_SECRET must be set in .env}
       STORAGE_TYPE: local
+      # Migration + cron chi dang ky o server, khong dang ky lai o worker.
+      DISABLE_DB_MIGRATIONS: "false"
+      DISABLE_CRON_JOBS_REGISTRATION: "false"
+    volumes:
+      # STORAGE_TYPE=local ma khong mount volume thi file dinh kem (hop dong, anh kho)
+      # mat het moi lan tao lai container. Server va worker phai dung CHUNG volume nay.
+      - twenty_local_storage:/app/packages/twenty-server/.local-storage
     depends_on:
       twenty_db:
         condition: service_healthy
+      twenty_redis:
+        condition: service_healthy
+    healthcheck:
+      # curl co san trong image twentycrm/twenty; /healthz la endpoint upstream dung.
+      test: ["CMD", "curl", "--fail", "http://localhost:3000/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  # Worker rieng cua Twenty: chay queue va cron (dong bo email/lich, viec nen).
+  # Khong co worker thi moi thu phai email hay nhac lich deu khong bao gio chay.
+  twenty_worker:
+    image: twentycrm/twenty:latest
+    container_name: esco_twenty_worker
+    restart: unless-stopped
+    command: ["yarn", "worker:prod"]
+    environment:
+      PG_DATABASE_URL: postgresql://${TWENTY_DB_USER:-twenty}:${TWENTY_DB_PASSWORD:?TWENTY_DB_PASSWORD must be set in .env}@twenty_db:5432/${TWENTY_DB_NAME:-twenty}
+      SERVER_URL: http://localhost:${TWENTY_PORT:-3002}
+      REDIS_URL: redis://twenty_redis:6379
+      APP_SECRET: ${TWENTY_APP_SECRET:?TWENTY_APP_SECRET must be set in .env}
+      STORAGE_TYPE: local
+      # Server da chay migration va dang ky cron roi; worker lam lai se chay doi viec.
+      DISABLE_DB_MIGRATIONS: "true"
+      DISABLE_CRON_JOBS_REGISTRATION: "true"
+    volumes:
+      - twenty_local_storage:/app/packages/twenty-server/.local-storage
+    depends_on:
+      twenty_db:
+        condition: service_healthy
+      twenty_redis:
+        condition: service_healthy
+      twenty:
+        condition: service_healthy
+
+  # Redis cua rieng Twenty. KHONG mo cong ra host: khong stack nao khac dung no,
+  # va Redis khong auth ma bind ra host thi ai trong mang LAN cung doc duoc CRM.
+  twenty_redis:
+    image: redis:7-alpine
+    container_name: esco_twenty_redis
+    restart: unless-stopped
+    # noeviction: day la hang doi cong viec, khong phai cache. Redis tu xoa key khi
+    # day bo nho thi job bien mat tham lang - loi kho truy nhat.
+    command: ["--maxmemory-policy", "noeviction"]
+    volumes:
+      - twenty_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   twenty_db:
     image: postgres:16-alpine
@@ -212,7 +290,7 @@ services:
     environment:
       POSTGRES_DB: ${TWENTY_DB_NAME:-twenty}
       POSTGRES_USER: ${TWENTY_DB_USER:-twenty}
-      POSTGRES_PASSWORD: ${TWENTY_DB_PASSWORD:-twenty_secret}
+      POSTGRES_PASSWORD: ${TWENTY_DB_PASSWORD:?TWENTY_DB_PASSWORD must be set in .env}
     volumes:
       - twenty_data:/var/lib/postgresql/data
     healthcheck:
@@ -227,6 +305,8 @@ volumes:
   ninja_db_data:
   esco_grafana_data:
   twenty_data:
+  twenty_local_storage:
+  twenty_redis_data:
   connector_b_state:
 
 networks:

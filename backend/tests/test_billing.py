@@ -302,6 +302,62 @@ def test_build_invoice_dung_telemetry_khi_co_du_mau(tariff: Session, probe: Equi
     assert sum(invoice["kwh_by_band"].values()) == pytest.approx(70.0, abs=0.5)
 
 
+def test_telemetry_phu_mot_phan_van_phai_tinh_du_tien_theo_cong_to(
+    tariff: Session, probe: Equipment
+) -> None:
+    """Telemetry chi phu 1h trong ky 6h: tien dien van phai tinh tren delta that cua cong to.
+
+    Day la loi tinh thieu tien: tong kWh lay tu cong to (240) nhung phan chia theo khung gio
+    chi cong duoc 30 kWh cua 1h co mau -> tien dien ra 1/8 so phai thu, va hoa don van "xanh".
+    """
+    _add_meter(tariff, probe.id, [(0, 1000.0), (60, 1030.0)])
+    start = datetime(2026, 1, 7, 9, 0)
+    end = start + timedelta(hours=6)
+
+    invoice = billing.build_invoice(
+        tariff, "THUE-ANPHAT", start, end,
+        previous_kwh=1000.0, current_kwh=1240.0, service_rate_per_kwh=3500,
+        equipment_id=probe.id, rated_power_kw=40.0, source="MODBUS",
+    )
+    tariff.commit()
+
+    assert invoice["breakdown"]["split_method"] == "telemetry_scaled"
+    assert invoice["total_kwh"] == pytest.approx(240.0)
+    assert sum(invoice["kwh_by_band"].values()) == pytest.approx(240.0, abs=1e-6)
+    # 09:30 la diem giua cua khoang mau duy nhat -> thuoc khung cao diem
+    prices = billing.band_prices(_bands(tariff))
+    peak_price = prices[TariffBandCode.PEAK.value]
+    assert invoice["electricity_vnd"] == pytest.approx(240.0 * peak_price, abs=2), (
+        "Phai tinh tien tren 240 kWh cua cong to, khong phai 30 kWh cua 1h telemetry"
+    )
+    assert invoice["breakdown"]["telemetry_covered_hours"] == pytest.approx(1.0)
+    assert any("1 / 6 gio" in w for w in invoice["breakdown"]["warnings"]), invoice["breakdown"]
+
+
+def test_telemetry_bao_khong_tieu_thu_trong_khi_cong_to_van_chay(
+    tariff: Session, probe: Equipment
+) -> None:
+    """Telemetry dung im (delta 0) nhung cong to hoa don van chay: hai nguon mau thuan.
+
+    Khong duoc lay hinh dang toan 0 (tien dien = 0) - phai tro ve uoc luong theo gio
+    va noi ro do la uoc luong.
+    """
+    _add_meter(tariff, probe.id, [(0, 1000.0), (60, 1000.0)])
+    start = datetime(2026, 1, 7, 9, 0)
+
+    invoice = billing.build_invoice(
+        tariff, "THUE-ANPHAT", start, start + timedelta(hours=6),
+        previous_kwh=1000.0, current_kwh=1240.0, service_rate_per_kwh=3500,
+        equipment_id=probe.id, rated_power_kw=40.0, source="MODBUS",
+    )
+    tariff.commit()
+
+    assert invoice["breakdown"]["split_method"] == "hours_estimate"
+    assert invoice["total_kwh"] == pytest.approx(240.0)
+    assert sum(invoice["kwh_by_band"].values()) == pytest.approx(240.0, abs=1e-6)
+    assert invoice["electricity_vnd"] > 0
+
+
 # --------------------------------------------------------------------------- #
 # Load shifting - con so that tu bieu gia, khong hardcode 35%
 # --------------------------------------------------------------------------- #

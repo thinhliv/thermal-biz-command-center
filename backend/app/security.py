@@ -1,9 +1,20 @@
-"""Bao mat: bcrypt + JWT + RBAC 3 vai, va API key cho endpoint may-goi-may.
+"""Bao mat: bcrypt + JWT + RBAC, va API key cho endpoint may-goi-may.
 
-Phan quyen theo yeu cau:
-- BGD      : thay tat ca
-- VANHANH  : chi Nhiet + canh bao (doc & xac nhan)
-- KETOAN   : chi Kinh doanh + Cong no
+Hai tang vai tro song song (xem `Role` trong models.py):
+- 3 vai goc, tuong thich nguoc voi phien ban dau:
+    BGD      : thay tat ca
+    VANHANH  : chi Nhiet + canh bao (doc & xac nhan)
+    KETOAN   : chi Kinh doanh + Cong no
+- L1-L10 Enterprise Matrix: phan quyen chi tiet theo tung khoi (lanh dao / ky thuat /
+  chat luong HACCP / tai chinh - kinh doanh).
+
+Endpoint bao ve bang cac bundle `require_roles(...)` o cuoi file; con `ROLE_SCOPES` chi
+dung de frontend an/hien tab va cat ban tin WebSocket. Chieu bat buoc: moi scope cua mot
+vai tro phai duoc mot bundle cho phep, neu khong tab hien ra nhung moi loi goi deu 403.
+Chieu nguoc lai (co bundle ma khong co scope) thi hop le va co y: API mo cho vai tro do
+nhung UI khong dung tab rieng. Ba vai goc giu dung pham vi tab theo yeu cau nghiep vu
+(VANHANH chi Nhiet + Canh bao, KETOAN chi Kinh doanh + Cong no) du ho van goi duoc
+/api/ai va /api/compliance tu cac man hinh khac.
 """
 
 from __future__ import annotations
@@ -13,7 +24,7 @@ from datetime import timedelta
 
 import bcrypt
 import jwt
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
@@ -141,29 +152,68 @@ def require_connector_key(x_connector_api_key: str = Header(default="")) -> None
 
 
 # --------------------------------------------------------------------------- #
+# Dia chi nguon goi (de ghi vao nhat ky kiem toan)
+# --------------------------------------------------------------------------- #
+def client_ip(request: Request) -> str | None:
+    """Dia chi IP cua ben goi, lay tu ket noi TCP that.
+
+    KHONG doc X-Forwarded-For: header do do client tu dat nen ai cung gia mao duoc,
+    ma nhat ky kiem toan dung IP de truy nguon - ghi vao mot gia tri gia mao duoc thi
+    cot do vo dung, con nguy hon la de trong vi nguoi doc tuong no dang tin.
+
+    He qua phai noi ro: khi chay sau reverse proxy (nginx/traefik) moi ban ghi deu mang
+    IP cua proxy. Muon co IP that thi phai them cau hinh "chi tin header den tu proxy
+    nao" - khong duoc tin XFF vo dieu kien.
+    """
+    return request.client.host if request.client else None
+
+
+# --------------------------------------------------------------------------- #
 # Ban do quyen cho frontend biet nen an/hien tab nao (L1-L10 Enterprise Matrix)
 # --------------------------------------------------------------------------- #
+#: Moi scope ma frontend biet ve. Them scope moi thi phai them o day VA o
+#: `frontend/src/types/api.ts` (type `Scope`), neu khong hai ben lech nhau am tham.
+ALL_SCOPES: list[str] = [
+    "overview",
+    "thermal",
+    "alerts",
+    "business",
+    "debts",
+    "audit",
+    "compliance",
+    "ai",
+    "sync",
+]
+
+#: Scope phai phu het moi pillar co endpoint, neu khong frontend khong the an/hien tab
+#: tuong ung va se goi API ma chac chan nhan 403. Truoc day chi co 6 scope cua pillar 1
+#: (overview/thermal/business/debts/alerts/audit) trong khi backend da co them
+#: /api/sync, /api/ai, /api/compliance -> ba pillar do vo hinh tren UI.
 ROLE_SCOPES: dict[str, list[str]] = {
     # 3 Vai tro goc (Tuong thich nguoc 100%)
-    Role.BGD.value: ["overview", "thermal", "business", "debts", "alerts", "audit"],
+    Role.BGD.value: ALL_SCOPES,
     Role.VANHANH.value: ["thermal", "alerts"],
     Role.KETOAN.value: ["business", "debts"],
 
     # Cap Lanh Dao & Chien Luoc
-    Role.L1_CHAIRMAN.value: ["overview", "thermal", "business", "debts", "alerts", "audit"],
-    Role.L2_CEO.value: ["overview", "thermal", "business", "debts", "alerts", "audit"],
+    Role.L1_CHAIRMAN.value: ALL_SCOPES,
+    Role.L2_CEO.value: ALL_SCOPES,
 
     # Cap Quan Ly Ky Thuat & Co Dien Lanh
-    Role.L3_TECHNICAL_DIRECTOR.value: ["overview", "thermal", "alerts", "audit"],
-    Role.L4_OPERATIONS_MANAGER.value: ["thermal", "alerts"],
-    Role.L5_MAINTENANCE_ENGINEER.value: ["thermal", "alerts"],
+    Role.L3_TECHNICAL_DIRECTOR.value: ["overview", "thermal", "alerts", "audit", "ai", "sync"],
+    Role.L4_OPERATIONS_MANAGER.value: ["thermal", "alerts", "sync"],
+    Role.L5_MAINTENANCE_ENGINEER.value: ["thermal", "alerts", "ai"],
 
     # Cap Van Hanh Chuoi Kho Lanh & HACCP
-    Role.L6_HACCP_AUDITOR.value: ["overview", "thermal", "alerts"],
+    # L6 la vai tro CHUYEN KIEM TOAN: phai co `compliance` (bao cao HACCP/ESG) va `audit`
+    # (nhat ky hanh vi + xac minh chuoi bam). Thieu hai scope nay thi vai tro sinh ra de
+    # kiem toan khong kiem toan duoc gi ca.
+    Role.L6_HACCP_AUDITOR.value: ["overview", "thermal", "alerts", "compliance", "audit"],
     Role.L7_WAREHOUSE_DISPATCHER.value: ["thermal", "alerts"],
 
     # Cap Tai Chinh, Ke Toan & Kinh Doanh ESCO
-    Role.L8_CFO.value: ["overview", "business", "debts", "audit"],
+    # L8 co `compliance` vi bao cao phat thai ESG Scope 1 & 2 la nghia vu cong bo cua CFO.
+    Role.L8_CFO.value: ["overview", "business", "debts", "audit", "compliance"],
     Role.L9_BILLING_SPECIALIST.value: ["business", "debts"],
     Role.L10_SALES_EXECUTIVE.value: ["business"],
 }
@@ -195,11 +245,40 @@ FinanceRoles = require_roles(
     Role.L9_BILLING_SPECIALIST,
     Role.L10_SALES_EXECUTIVE,
 )
+# Them L6_HACCP_AUDITOR: nguoi phat hanh chung chi HACCP (`POST /api/compliance/haccp/
+# certificate`) ma khong doc duoc nhat ky kiem toan thi vai tro do khong lam duoc viec.
 AuditRoles = require_roles(
     Role.BGD,
     Role.L1_CHAIRMAN,
     Role.L2_CEO,
     Role.L3_TECHNICAL_DIRECTOR,
+    Role.L6_HACCP_AUDITOR,
+    Role.L8_CFO,
+)
+#: Doc bao cao HACCP / dau chan carbon ESG. Khong dung `AnyRole`: L9 (billing) va L10
+#: (kinh doanh) khong co ly do nghiep vu nao de xem so lan vi pham nguong nhiet do.
+#: KETOAN co quyen doc ESG vi dau chan carbon la chi phi phai cong bo va tinh gia thanh.
+ComplianceRoles = require_roles(
+    Role.BGD,
+    Role.KETOAN,
+    Role.L1_CHAIRMAN,
+    Role.L2_CEO,
+    Role.L3_TECHNICAL_DIRECTOR,
+    Role.L4_OPERATIONS_MANAGER,
+    Role.L6_HACCP_AUDITOR,
+    Role.L8_CFO,
+)
+#: Lich cat dinh phu tai & chan doan bao tri du doan: cong cu cua khoi ky thuat, cua cap
+#: dieu hanh / tai chinh vi no quyet dinh chi phi dien, va cua truong ca van hanh vi
+#: nguoi do la nguoi thuc thi lich cat tai tren san.
+AiRoles = require_roles(
+    Role.BGD,
+    Role.VANHANH,
+    Role.L1_CHAIRMAN,
+    Role.L2_CEO,
+    Role.L3_TECHNICAL_DIRECTOR,
+    Role.L4_OPERATIONS_MANAGER,
+    Role.L5_MAINTENANCE_ENGINEER,
     Role.L8_CFO,
 )
 AnyRole = require_roles(*list(Role))

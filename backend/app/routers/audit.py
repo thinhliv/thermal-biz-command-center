@@ -1,20 +1,21 @@
 """Router cho Nhat ky kiem toan bat bien (Immutable Audit Trail).
 
-Cho phep cap lanh dao (L1, L2, L3, L8, BGD) truy van nhat ky van hanh va
-xac minh tinh toan ven chuoi ma hoa.
+Cho phep cap lanh dao va nguoi kiem soat chat luong (bundle `AuditRoles`: BGD, L1, L2,
+L3, L6_HACCP_AUDITOR, L8) truy van nhat ky van hanh va xac minh tinh toan ven chuoi
+chu ky HMAC.
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
-from sqlalchemy import desc, select
+from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
 from ..database import get_session
-from ..models import AuditLog, User
+from ..models import AuditLog
 from ..security import AuditRoles
 from ..services.audit import verify_audit_chain
 
@@ -43,22 +44,20 @@ def list_audit_logs(
     resource_type: Optional[str] = None,
     session: Session = Depends(get_session),
 ) -> Dict[str, Any]:
-    stmt = select(AuditLog)
+    conditions = []
     if action:
-        stmt = stmt.where(AuditLog.action == action)
+        conditions.append(AuditLog.action == action)
     if resource_type:
-        stmt = stmt.where(AuditLog.resource_type == resource_type)
+        conditions.append(AuditLog.resource_type == resource_type)
 
-    total_query = select(AuditLog.id)
-    if action:
-        total_query = total_query.where(AuditLog.action == action)
-    if resource_type:
-        total_query = total_query.where(AuditLog.resource_type == resource_type)
-    total = len(list(session.scalars(total_query)))
+    # COUNT(*) tren DB, khong keo het id ve roi dem bang len(): nhat ky kiem toan la bang
+    # lon nhat he thong va chi lon dan, mot lan mo trang khong duoc tieu thu bo nho
+    # ty le thuan voi so nam van hanh.
+    total = int(session.scalar(select(func.count(AuditLog.id)).where(*conditions)) or 0)
 
     records = list(
         session.scalars(
-            stmt.order_by(desc(AuditLog.id)).offset(offset).limit(limit)
+            select(AuditLog).where(*conditions).order_by(desc(AuditLog.id)).offset(offset).limit(limit)
         )
     )
 

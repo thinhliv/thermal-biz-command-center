@@ -49,7 +49,63 @@ class EdgeSyncAgent:
         self.api_key = api_key
         self.db_path = str(db_path)
         self.timeout_seconds = timeout_seconds
+        #: Do tre cua LAN flush truoc. Chi co sau khi thuc su goi Cloud mot lan,
+        #: nen goi dau tien khong gui latency (hon la bao 0ms - mot con so khong co that).
+        self._last_latency_ms: Optional[int] = None
         self._init_db()
+
+    @staticmethod
+    def _mark_synced(conn: sqlite3.Connection, ids: List[int], batch_id: str) -> None:
+        if not ids:
+            return
+        placeholders = ",".join("?" for _ in ids)
+        conn.execute(
+            f"""
+            UPDATE outbox
+            SET synced = 1, batch_id = ?, synced_at = ?, retry_count = 0, last_error = NULL
+            WHERE id IN ({placeholders})
+            """,
+            [batch_id, utcnow_str()] + list(ids),
+        )
+        conn.commit()
+
+    @staticmethod
+    def _mark_failed(conn: sqlite3.Connection, ids: List[int], error: str) -> None:
+        """Giu ban ghi o trang thai CHUA sync de lan sau gui lai.
+
+        Khong bao gio danh dau synced cho mot ban ghi Cloud tu choi: viec do bien
+        "mat du lieu" thanh "da dong bo xong" va khong con cach nao phat hien ra.
+        """
+        if not ids:
+            return
+        placeholders = ",".join("?" for _ in ids)
+        conn.execute(
+            f"""
+            UPDATE outbox
+            SET retry_count = retry_count + 1, last_error = ?
+            WHERE id IN ({placeholders})
+            """,
+            [error] + list(ids),
+        )
+        conn.commit()
+
+    @staticmethod
+    def _rejected_row_ids(cloud_response: Dict[str, Any], row_ids: List[int]) -> Dict[int, str]:
+        """Map row_id -> ly do tu choi, doc tu field `rejected` ma Cloud tra ve.
+
+        Cloud danh `index` theo vi tri trong mang `records` da gui, nen phai doi qua
+        `row_ids` theo dung thu tu do. Thieu buoc nay thi mot ban ghi bi tu choi van
+        bi danh dau synced va mat vinh vien o bien.
+        """
+        result: Dict[int, str] = {}
+        for item in cloud_response.get("rejected") or []:
+            if not isinstance(item, dict):
+                continue
+            index = item.get("index")
+            if not isinstance(index, int) or not 0 <= index < len(row_ids):
+                continue
+            result[row_ids[index]] = str(item.get("error") or "Cloud tu choi ban ghi")
+        return result
 
     @contextmanager
     def _connection(self) -> Generator[sqlite3.Connection, None, None]:
@@ -128,91 +184,96 @@ class EdgeSyncAgent:
             if not rows:
                 return {"status": "empty", "flushed": 0, "pending": 0}
 
-            row_ids = [r["id"] for r in rows]
-            records = []
+            row_ids: List[int] = []
+            records: List[Dict[str, Any]] = []
+            corrupt_ids: List[int] = []
             for r in rows:
                 try:
                     parsed = json.loads(r["payload"])
-                    parsed["type"] = r["record_type"]
-                    records.append(parsed)
                 except Exception as exc:
-                    logger.warning("Bo qua row loi JSON id=%s: %s", r["id"], exc)
+                    corrupt_ids.append(r["id"])
+                    logger.error("Row outbox id=%s hong JSON, khong the dong bo: %s", r["id"], exc)
+                    continue
+                parsed["type"] = r["record_type"]
+                row_ids.append(r["id"])
+                records.append(parsed)
+
+            # Row hong la du lieu khong the phuc hoi: giu nguyen synced = 0 de --stats
+            # con nhin thay, va ghi last_error thay vi "bo qua" trong im lang.
+            self._mark_failed(conn, corrupt_ids, "CORRUPT_PAYLOAD: khong doc duoc JSON cuc bo")
+
+            if not records:
+                return {
+                    "status": "no_sendable_records",
+                    "flushed": 0,
+                    "corrupt_records": len(corrupt_ids),
+                    "pending": len(rows) - len(corrupt_ids),
+                }
 
             batch_id = f"BATCH-{self.site_code}-{uuid.uuid4().hex[:12].upper()}"
 
-            # Tinh do tre mang
-            t0 = time.perf_counter()
             url = f"{self.cloud_url}/api/sync/push"
             headers = {
                 "X-Connector-Api-Key": self.api_key,
                 "Content-Type": "application/json",
             }
-            body = {
+            body: Dict[str, Any] = {
                 "site_code": self.site_code,
                 "batch_id": batch_id,
-                "latency_ms": 0,
+                # So ban ghi con ton trong outbox TRUOC goi nay (tinh ca chinh goi nay).
+                # Chi Edge moi biet con so nay; Cloud tru di so da nap de hien thi hang doi.
+                "pending_records": conn.execute(
+                    "SELECT COUNT(*) FROM outbox WHERE synced = 0"
+                ).fetchone()[0],
                 "records": records,
             }
+            if self._last_latency_ms is not None:
+                body["latency_ms"] = self._last_latency_ms
 
             try:
+                t0 = time.perf_counter()
                 resp = requests.post(url, json=body, headers=headers, timeout=self.timeout_seconds)
                 latency_ms = int((time.perf_counter() - t0) * 1000)
+                self._last_latency_ms = latency_ms
 
                 if resp.status_code in (200, 201):
                     data = resp.json()
-                    now_ts = utcnow_str()
-                    placeholders = ",".join("?" for _ in row_ids)
-                    conn.execute(
-                        f"""
-                        UPDATE outbox
-                        SET synced = 1, batch_id = ?, synced_at = ?, retry_count = 0, last_error = NULL
-                        WHERE id IN ({placeholders})
-                        """,
-                        [batch_id, now_ts] + row_ids,
-                    )
-                    conn.commit()
+                    errors_by_id = self._rejected_row_ids(data, row_ids)
+                    rejected_ids = list(errors_by_id)
+                    accepted_ids = [rid for rid in row_ids if rid not in errors_by_id]
+
+                    self._mark_synced(conn, accepted_ids, batch_id)
+                    for rid in rejected_ids:
+                        self._mark_failed(conn, [rid], errors_by_id[rid])
+
                     logger.info(
-                        "Da flush thanh cong %d ban ghi tu %s (Batch %s, latency %dms)",
+                        "Da flush %d/%d ban ghi tu %s (Batch %s, latency %dms, Cloud tu choi %d)",
+                        len(accepted_ids),
                         len(row_ids),
                         self.site_code,
                         batch_id,
                         latency_ms,
+                        len(rejected_ids),
                     )
                     return {
-                        "status": "success",
+                        "status": "success" if not rejected_ids else "partial",
                         "batch_id": batch_id,
-                        "flushed": len(row_ids),
+                        "flushed": len(accepted_ids),
+                        "rejected": len(rejected_ids),
+                        "corrupt_records": len(corrupt_ids),
                         "latency_ms": latency_ms,
                         "cloud_response": data,
                     }
-                else:
-                    err_msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
-                    logger.error("Cloud tu choi batch %s: %s", batch_id, err_msg)
-                    placeholders = ",".join("?" for _ in row_ids)
-                    conn.execute(
-                        f"""
-                        UPDATE outbox
-                        SET retry_count = retry_count + 1, last_error = ?
-                        WHERE id IN ({placeholders})
-                        """,
-                        [err_msg] + row_ids,
-                    )
-                    conn.commit()
-                    return {"status": "cloud_rejected", "flushed": 0, "error": err_msg}
+
+                err_msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
+                logger.error("Cloud tu choi batch %s: %s", batch_id, err_msg)
+                self._mark_failed(conn, row_ids, err_msg)
+                return {"status": "cloud_rejected", "flushed": 0, "error": err_msg}
 
             except requests.RequestException as exc:
                 err_msg = f"Network exception: {exc}"
                 logger.warning("Mat ket noi Cloud khi flush batch %s: %s", batch_id, err_msg)
-                placeholders = ",".join("?" for _ in row_ids)
-                conn.execute(
-                    f"""
-                    UPDATE outbox
-                    SET retry_count = retry_count + 1, last_error = ?
-                    WHERE id IN ({placeholders})
-                    """,
-                    [err_msg] + row_ids,
-                )
-                conn.commit()
+                self._mark_failed(conn, row_ids, err_msg)
                 return {"status": "network_error", "flushed": 0, "error": err_msg}
 
     def purge_synced(self, keep_last: int = 1000) -> int:
@@ -236,11 +297,18 @@ class EdgeSyncAgent:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Edge Store-and-Forward Sync Agent")
-    parser.add_argument("--site", default=os.getenv("SITE_CODE", "SITE-BAC-NINH"), help="Ma chi nhanh")
+    parser.add_argument("--site", default=os.getenv("SITE_CODE", "SITE-NHA-A"), help="Ma chi nhanh (phai duoc dang ky o Cloud)")
     parser.add_argument("--cloud-url", default=os.getenv("CLOUD_API_URL", "http://127.0.0.1:8000"), help="Cloud API URL")
     parser.add_argument("--api-key", default=os.getenv("CONNECTOR_API_KEY", "dev-connector-key"), help="API Key")
     parser.add_argument("--db", default="edge_outbox.db", help="Path toi SQLite DB outbox")
     parser.add_argument("--flush", action="store_true", help="Chay flush outbox mot lan")
+    parser.add_argument("--watch", action="store_true", help="Chay vong lap tu dong flush (dung doc trong systemd/container)")
+    parser.add_argument(
+        "--interval",
+        type=int,
+        default=int(os.getenv("SYNC_INTERVAL_SECONDS", "60")),
+        help="So giay giua hai lan flush khi dung --watch (toi thieu 5)",
+    )
     parser.add_argument("--stats", action="store_true", help="In thong ke outbox")
     args = parser.parse_args()
 
@@ -251,12 +319,27 @@ def main() -> None:
         print(json.dumps(stats, indent=2))
         return
 
+    if args.watch:
+        # Day la vong lap ma docstring hua ("mang phuc hoi -> tu dong flush").
+        # Mat mang khong lam mat du lieu: outbox van giu, retry_count tang len.
+        interval = max(5, args.interval)
+        logger.info("Che do watch: flush moi %d giay. Ctrl-C de dung.", interval)
+        try:
+            while True:
+                result = agent.flush_batch()
+                if result.get("status") != "empty":
+                    print(json.dumps(result, indent=2))
+                time.sleep(interval)
+        except KeyboardInterrupt:
+            logger.info("Dung agent. Hang doi van giu nguyen trong outbox.")
+        return
+
     if args.flush:
         res = agent.flush_batch()
         print(json.dumps(res, indent=2))
         return
 
-    print("Agent san sang. Dung --flush de day hang doi hoac --stats de xem trang thai.")
+    print("Agent san sang. Dung --flush de day hang doi mot lan, --watch de chay nen, hoac --stats de xem trang thai.")
 
 
 if __name__ == "__main__":

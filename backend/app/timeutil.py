@@ -18,13 +18,6 @@ def utctoday() -> date:
     return utcnow().date()
 
 
-def days_since(moment: datetime | None, now: datetime | None = None) -> int:
-    if moment is None:
-        return 0
-    now = now or utcnow()
-    return max(0, (now - moment).days)
-
-
 def month_bounds(moment: datetime | None = None) -> tuple[datetime, datetime]:
     """(dau thang, dau thang ke tiep) cua thang chua `moment`."""
     moment = moment or utcnow()

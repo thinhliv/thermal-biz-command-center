@@ -14,7 +14,7 @@ Khi EVN ra quyet dinh moi, sua `EVN_PRICES` va them bo band voi `effective_from`
 from __future__ import annotations
 
 import random
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,6 +23,7 @@ from .config import get_settings
 from .models import (
     Alert,
     AlarmRule,
+    AuditLog,
     BilledInvoice,
     Comparator,
     Customer,
@@ -38,6 +39,8 @@ from .models import (
     Role,
     ServiceOrder,
     Severity,
+    Site,
+    SyncBatch,
     TariffBand,
     TariffBandCode,
     TelemetrySample,
@@ -88,27 +91,50 @@ def _effective_from() -> date:
 # --------------------------------------------------------------------------- #
 # Nguoi dung
 # --------------------------------------------------------------------------- #
+#: Tai khoan demo cho TOAN BO 13 vai tro. He thong chua co endpoint tao nguoi dung, nen
+#: day la cach DUY NHAT de cac vai L1-L10 ton tai luc chay; khong seed thi ca ma tran
+#: quyen (`ROLE_SCOPES`, `require_roles`) chi la cau hinh chet khong kiem thu duoc tren that.
+#: Username cua vai L lay theo `role.value.lower()` de khoi nghi va de grep tu ma tran quyen.
 DEMO_USERS = [
     ("bgd", Role.BGD, "Nguyễn Văn Hùng", "Tổng Giám đốc"),
     ("vanhanh", Role.VANHANH, "Trần Thị Mai", "Trưởng ca Vận hành"),
     ("ketoan", Role.KETOAN, "Lê Quốc Bảo", "Kế toán trưởng"),
+    ("l1_chairman", Role.L1_CHAIRMAN, "Phạm Minh Đăng", "Chủ tịch HĐQT"),
+    ("l2_ceo", Role.L2_CEO, "Võ Thuỳ Linh", "Tổng Giám đốc Điều hành"),
+    ("l3_technical_director", Role.L3_TECHNICAL_DIRECTOR, "Đặng Quốc Việt", "Giám đốc Kỹ thuật"),
+    ("l4_operations_manager", Role.L4_OPERATIONS_MANAGER, "Hồ Sỹ Nam", "Quản lý Vận hành"),
+    ("l5_maintenance_engineer", Role.L5_MAINTENANCE_ENGINEER, "Lý Văn Thành", "Kỹ sư Bảo trì"),
+    ("l6_haccp_auditor", Role.L6_HACCP_AUDITOR, "Nguyễn Hà Phương", "Chuyên viên HACCP & Chất lượng"),
+    ("l7_warehouse_dispatcher", Role.L7_WAREHOUSE_DISPATCHER, "Trương Văn Điền", "Điều phối viên Kho lạnh"),
+    ("l8_cfo", Role.L8_CFO, "Đỗ Thị Kim Ngân", "Giám đốc Tài chính"),
+    ("l9_billing_specialist", Role.L9_BILLING_SPECIALIST, "Bùi Tuấn Kiệt", "Chuyên viên Billing ESCO"),
+    ("l10_sales_executive", Role.L10_SALES_EXECUTIVE, "Ngô Thanh Hà", "Chuyên viên Kinh doanh B2B"),
 ]
 
 
 def seed_users(session: Session, password: str) -> list[User]:
-    created: list[User] = []
-    for username, role, full_name, note in DEMO_USERS:
-        if session.scalars(select(User).where(User.username == username)).first():
-            continue
-        user = User(
+    existing = set(session.scalars(select(User.username)))
+    missing = [row for row in DEMO_USERS if row[0] not in existing]
+    if not missing:
+        return []
+
+    # Hash MOT lan cho tat ca: bcrypt rounds=12 ton ~0.27s, ma 13 tai khoan demo dung
+    # chung mot mat khau tu `SEED_DEMO_PASSWORD` nen 13 lan hash chi de tinh ra 13 chuoi
+    # khac-salt cua cung mot plaintext. He qua dung chung salt khong lam yeu di gi vi ban
+    # than mat khau da giong het nhau va nam san trong .env. Tai khoan that (khi co endpoint
+    # tao user) van phai hash rieng tung nguoi.
+    password_hash = hash_password(password)
+    created = [
+        User(
             username=username,
-            password_hash=hash_password(password),
+            password_hash=password_hash,
             full_name=f"{full_name} ({note})",
             role=role.value,
             is_active=True,
         )
-        session.add(user)
-        created.append(user)
+        for username, role, full_name, note in missing
+    ]
+    session.add_all(created)
     session.flush()
     return created
 
@@ -342,6 +368,25 @@ def seed_alarm_rules(session: Session) -> int:
 SAMPLE_STEP_MIN = 15
 SAMPLE_HOURS = 30
 
+#: Ranh gioi chia doi cua so telemetry: phan MOI HON sinh canh bao DANG MO, phan CU HON
+#: sinh lich su da dong. Hai ham seed phai dung chung mot hang so, neu khong se hoac
+#: danh gia trung mot mau (alert bi tao hai lan) hoac bo sot mot khoang (lich su co gap).
+RECENT_ALERT_HOURS = 6
+
+#: Do dai cua so dung de dung lai lich su canh bao, tinh nguoc tu `RECENT_ALERT_HOURS`.
+#: CO Y khong danh gia het 30 gio telemetry: `evaluate_sample` chay vai truy van cho MOI
+#: mau (doc rule + tim canh bao dang mo cua rule do), nen replay ca cua so ton ~1s/lan
+#: seed - ma fixture `seeded` chay lai cho hang chuc test, cong don thanh hang phut CI.
+#: He qua can biet: telemetry o khoang CU HON nua so nay van co the co vi pham ma khong
+#: co Alert tuong ung, vi chung chua bao gio duoc danh gia. Day khong phai du lieu sai -
+#: khong co Alert thi dung la khong co ket luan nao ve khoan do, chu khong phai "da kiem
+#: tra va khong thay vi pham". Muon lich su day hon thi tang hang so nay len.
+HISTORY_ALERT_HOURS = 6
+
+#: Phut sau khi canh bao phat sinh thi nguoi van hanh xac nhan - lay lan luot de seed
+#: DETERMINISTIC ma khong can truyen `rng` vao ham.
+ACK_AFTER_MINUTES = (7, 12, 20, 35)
+
 
 def _profile_for(code: str, spec: dict) -> dict:
     """Kich ban van hanh rieng cho tung thiet bi de sinh ra canh bao THAT."""
@@ -464,8 +509,8 @@ def seed_telemetry(session: Session, equipment: list[Equipment], rng: random.Ran
 
 
 def seed_alerts_from_telemetry(session: Session, equipment: list[Equipment]) -> int:
-    """Danh gia 6 gio gan nhat de sinh Alert THAT tu AlarmRule (khong hardcode)."""
-    cutoff = utcnow() - timedelta(hours=6)
+    """Danh gia phan cua so MOI de sinh Alert THAT tu AlarmRule (khong hardcode)."""
+    cutoff = utcnow() - timedelta(hours=RECENT_ALERT_HOURS)
     created = 0
     for item in equipment:
         samples = list(
@@ -481,86 +526,74 @@ def seed_alerts_from_telemetry(session: Session, equipment: list[Equipment]) -> 
     return created
 
 
-def seed_alert_history(session: Session, users: list[User]) -> int:
-    """Vai canh bao DA DONG/DA XAC NHAN de man hinh Canh bao co lich su, khong trong tron."""
-    if session.scalars(select(Alert).where(Alert.cleared_at.is_not(None)).limit(1)).first():
+def seed_alert_history(session: Session, equipment: list[Equipment]) -> int:
+    """Sinh canh bao DA DONG tu telemetry THAT de man hinh Canh bao co lich su.
+
+    `seed_alerts_from_telemetry` chi danh gia cua so gan nhat nen chu yeu sinh ra canh bao
+    DANG MO. Ham nay danh gia phan CU HON cua cung luong telemetry bang dung
+    `evaluate_sample` - ham do co day du vong doi (vi pham thi mo, het vi pham thi dong)
+    nen `raised_at`, `cleared_at`, `observed_value` va `message` deu sinh ra tu rule va
+    mau that.
+
+    Buoc nguoi van hanh xac nhan tach ra `acknowledge_closed_alerts` vi ly do thu tu:
+    mot su co bat dau trong khoang lich su nhung keo dai qua `cutoff` se chi duoc DONG boi
+    luot danh gia cua `seed_alerts_from_telemetry`. Neu xac nhan ngay trong nay thi nhung
+    canh bao do bi bo qua - man hinh se co su co da dong ma chua ai xu ly.
+
+    KHONG viet tay alert: ban cu chen 4 dong `rule_id=None` kem chuoi "Da ve dan nong va
+    nap bo sung 12 kg R404A, COP phuc hoi 3.02", "Da can truc va thay bac dan"... Nhung
+    su co va ket qua xu ly do chua tung duoc ghi nhan o bat ky dau, va khong co mau
+    telemetry nao ung voi chung - vi pham nguyen tac COHERENT o dau file, dong thoi lot
+    luon `test_canh_bao_duoc_sinh_ra_tu_telemetry_that` vi test do `continue` khi
+    `rule_id is None`.
+    """
+    if session.scalars(select(Alert).limit(1)).first():
         return 0
-    ack_by = users[1].id if len(users) > 1 else (users[0].id if users else None)
-    now = utcnow()
-    history = [
-        (
-            Severity.MAJOR.value,
-            Metric.COP.value,
-            "CAP_DONG_01",
-            2.61,
-            2.8,
-            "Hầm Cấp Đông Gió Nhanh 01: COP 2.61 thấp hơn 2.80 kéo dài >30 phút. "
-            "Đã vệ dàn nóng và nạp bổ sung 12 kg R404A, COP phục hồi 3.02.",
-            False,
-            52,
-        ),
-        (
-            Severity.WARNING.value,
-            Metric.VIBRATION_MM_S.value,
-            "MAY_NEN_01",
-            4.82,
-            4.5,
-            "Cụm Máy Nén Trục Vít: rung 4.82 mm/s vượt ranh giới ISO 10816-3. "
-            "Đã căn trục và thay bạc đạn trục vít A.",
-            False,
-            27,
-        ),
-        (
-            Severity.CRITICAL.value,
-            Metric.TEMPERATURE_C.value,
-            "KHO_DONG_02",
-            -16.4,
-            -18.0,
-            "HACCP - Kho Đông Thuê An Phát: nhiệt độ -16.4°C vượt giới hạn -18.0°C "
-            "trong 40 phút do cửa kho mở. Đã lập biên bản và đóng cửa, nhiệt độ về -21.8°C.",
-            True,
-            9,
-        ),
-        (
-            Severity.WARNING.value,
-            Metric.EFFICIENCY_PCT.value,
-            "LO_HOI_01",
-            73.8,
-            75.0,
-            "Lò Hơi Sinh Khối 01: hiệu suất đốt 73.8% thấp hơn 75.0%. "
-            "Đã làm sạch muội ống khói và chỉnh hệ số gió thừa từ 1.45 về 1.18.",
-            False,
-            3,
-        ),
-    ]
-    for severity, metric, code, observed, threshold, message, is_haccp, hours_ago in history:
-        item = session.scalars(select(Equipment).where(Equipment.code == code)).first()
-        if item is None:
-            continue
-        raised = now - timedelta(hours=hours_ago)
-        session.add(
-            Alert(
-                rule_id=None,
-                equipment_id=item.id,
-                severity=severity,
-                metric=metric,
-                observed_value=observed,
-                threshold=threshold,
-                message=message,
-                is_haccp=is_haccp,
-                raised_at=raised,
-                cleared_at=raised + timedelta(minutes=rng_duration(hours_ago)),
-                acknowledged_at=raised + timedelta(minutes=12),
-                acknowledged_by_id=ack_by,
+    cutoff = utcnow() - timedelta(hours=RECENT_ALERT_HOURS)
+    history_start = cutoff - timedelta(hours=HISTORY_ALERT_HOURS)
+
+    created = 0
+    for item in equipment:
+        samples = list(
+            session.scalars(
+                select(TelemetrySample)
+                .where(
+                    TelemetrySample.equipment_id == item.id,
+                    TelemetrySample.ts >= history_start,
+                    TelemetrySample.ts < cutoff,
+                )
+                .order_by(TelemetrySample.ts)
             )
         )
+        for sample in samples:
+            created += len(thermal.evaluate_sample(session, item, sample))
+    session.commit()
+    return created
+
+
+def acknowledge_closed_alerts(session: Session, users: list[User]) -> int:
+    """Nguoi van hanh xac nhan cac su co da dong. Chay SAU CA HAI luot sinh canh bao.
+
+    Chi nhung canh bao chua ai xac nhan moi duoc xu ly, nen ham nay chay lai bao nhieu
+    lan cung khong doi du lieu.
+    """
+    ack_by = users[1].id if len(users) > 1 else (users[0].id if users else None)
+    closed = list(
+        session.scalars(
+            select(Alert)
+            .where(Alert.cleared_at.is_not(None), Alert.acknowledged_at.is_(None))
+            .order_by(Alert.raised_at)
+        )
+    )
+    for index, alert in enumerate(closed):
+        delay = timedelta(minutes=ACK_AFTER_MINUTES[index % len(ACK_AFTER_MINUTES)])
+        # Xac nhan phai nam TRONG khoang su co con mo: giu nguyen `delay` thi nhung su co
+        # ngan se ra acknowledged_at muon hon cleared_at - vo ly va hien sai tren UI.
+        alert.acknowledged_at = alert.raised_at + min(delay, (alert.cleared_at - alert.raised_at) / 2)
+        if ack_by is not None:
+            alert.acknowledged_by_id = ack_by
     session.flush()
-    return len(history)
-
-
-def rng_duration(hours_ago: int) -> int:
-    """Thoi gian xu ly su co (phut) - ngan hon khi su co vua moi xay ra."""
-    return min(180, 25 + hours_ago * 3)
+    return len(closed)
 
 
 # --------------------------------------------------------------------------- #
@@ -880,19 +913,73 @@ def seed_billing_history(session: Session, equipment: list[Equipment], rng: rand
 
 
 # --------------------------------------------------------------------------- #
+# Chi nhanh / dia diem (master data cho Pillar 3 - Edge-to-Cloud Sync)
+# --------------------------------------------------------------------------- #
+# Site duoc seed truoc nhu Equipment: /api/sync/push chi nhan site_code da dang ky.
+# KHONG seed last_sync_at / sync_latency_ms. De trong nghia la "chua tung dong bo",
+# va /api/sync/sites se bao OFFLINE - trung thuc voi trang thai that cua he thong.
+SITE_SPEC: list[dict] = [
+    {
+        "code": "SITE-NHA-A",
+        "name": "Trụ sở chính - Nhà A",
+        "location": "Khu chế biến hải sản & dây chuyền IQF, Nhà A",
+    },
+    {
+        "code": "SITE-NHA-B",
+        "name": "Cơ sở Nhà B - Kho cho thuê",
+        "location": "Khu cho thuê kho lạnh, Nhà B",
+    },
+    {
+        "code": "SITE-NHA-C",
+        "name": "Cơ sở Nhà C - Kho nông sản",
+        "location": "Khu bảo quản nông sản, Nhà C",
+    },
+]
+
+
+def seed_sites(session: Session) -> int:
+    """Tạo danh sách chi nhánh. Idempotent theo `Site.code`."""
+    existing = set(session.scalars(select(Site.code)))
+    created = 0
+    for spec in SITE_SPEC:
+        if spec["code"] in existing:
+            continue
+        session.add(
+            Site(
+                code=spec["code"],
+                name=spec["name"],
+                location=spec["location"],
+                is_active=True,
+                sync_status="OFFLINE",
+            )
+        )
+        created += 1
+    session.flush()
+    return created
+
+
+# --------------------------------------------------------------------------- #
 # Entry point
 # --------------------------------------------------------------------------- #
 def seed_if_empty(session: Session, force: bool = False) -> dict:
     """Seed khi DB rong. Tra ve thong ke de log/doc qua API."""
     has_data = session.scalars(select(Equipment).limit(1)).first() is not None
     if has_data and not force:
-        return {"seeded": False, "reason": "Da co du lieu, bo qua seed."}
+        # Site la master data them o ban sau. Backfill idempotent de mot DB cu khi
+        # nang cap khong bi chet Pillar 3: khong co Site thi /api/sync/push 404 het.
+        backfilled = seed_sites(session)
+        session.commit()
+        stats = {"seeded": False, "reason": "Da co du lieu, bo qua seed."}
+        if backfilled:
+            stats["sites_backfilled"] = backfilled
+        return stats
 
     rng = random.Random(RANDOM_SEED)
     settings = get_settings()
 
     users = seed_users(session, settings.seed_demo_user_password)
     bands = seed_tariff_bands(session)
+    sites = seed_sites(session)
     equipment = seed_equipment(session)
     rules = seed_alarm_rules(session)
     samples = seed_telemetry(session, equipment, rng)
@@ -907,15 +994,16 @@ def seed_if_empty(session: Session, force: bool = False) -> dict:
     invoices = seed_billing_history(session, equipment, rng)
     session.commit()
 
-    history = seed_alert_history(session, list(session.scalars(select(User))))
-    session.commit()
+    history = seed_alert_history(session, equipment)
     raised = seed_alerts_from_telemetry(session, equipment)
+    acked = acknowledge_closed_alerts(session, users)
     session.commit()
 
     return {
         "seeded": True,
         "users": len(users),
         "tariff_bands": bands,
+        "sites": sites,
         "equipment": len(equipment),
         "alarm_rules": rules,
         "telemetry_samples": samples,
@@ -926,12 +1014,17 @@ def seed_if_empty(session: Session, force: bool = False) -> dict:
         "billed_invoices": invoices,
         "alerts_history": history,
         "alerts_raised": raised,
+        "alerts_acked": acked,
     }
 
 
 def reset(session: Session) -> None:
     """Xoa het du lieu nghiep vu (giu schema). Dung cho test/demo lai tu dau."""
+    # Thu tu quan trong: bang con phai xoa truoc bang cha (SyncBatch -> Site,
+    # AuditLog/Alert -> User). Dao thu tu se vo FK khi Postgres bat rang buoc.
     for model in (
+        SyncBatch,
+        Site,
         Alert,
         BilledInvoice,
         MeterReading,
@@ -943,6 +1036,7 @@ def reset(session: Session) -> None:
         AlarmRule,
         Equipment,
         TariffBand,
+        AuditLog,
         User,
     ):
         session.query(model).delete()

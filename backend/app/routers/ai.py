@@ -15,37 +15,57 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from ..database import get_session
-from ..security import AnyRole, ExecutiveOnly, ThermalRoles
+from ..security import AiRoles
 from ..services import ai_energy
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 
 class PeakShavingSimulateRequest(BaseModel):
+    #: KHONG co haccp_limit_c: nguong HACCP la thong so an toan cua doi xe, server tu lay tu bang
+    #: equipment. De ben goi truyen vao thi mot request khai -5 C se bien ke hoach cat dinh thanh
+    #: ke hoach lam hong hang, va khong con cach nao phat hien ra.
     rated_power_kw: float = Field(default=120.0, gt=0, le=5000)
     base_temp_c: float = Field(default=-18.0, ge=-50, le=10)
     pre_cool_target_c: float = Field(default=-22.5, ge=-50, le=-15)
-    haccp_limit_c: float = Field(default=-18.0, ge=-30, le=0)
+    weekday: int = Field(default=1, ge=1, le=7, description="Ngay ISO: 1 = thu Hai .. 7 = chu nhat")
 
 
-@router.get("/peak-shaving/schedule", dependencies=[Depends(AnyRole)])
-def get_peak_shaving_schedule() -> Dict[str, Any]:
-    """Tra ve ke hoach dieu phoi phu tai 24h toi uu chi phi dien gio cao diem."""
-    return ai_energy.calculate_peak_shaving_plan()
+def _plan(session: Session, **kwargs: Any) -> Dict[str, Any]:
+    """Goi engine va dich loi: 400 cho tham so sai, 409 cho server thieu cau hinh nghiep vu."""
+    try:
+        return ai_energy.calculate_peak_shaving_plan(session, **kwargs)
+    except ai_energy.PeakShavingConfigError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
-@router.post("/peak-shaving/simulate", dependencies=[Depends(AnyRole)])
-def simulate_peak_shaving(payload: PeakShavingSimulateRequest) -> Dict[str, Any]:
-    """Gia lap hieu qua cat dinh voi cong suat va nguong nhiet tuy bien."""
-    return ai_energy.calculate_peak_shaving_plan(
+@router.get("/peak-shaving/schedule", dependencies=[Depends(AiRoles)])
+def get_peak_shaving_schedule(
+    weekday: int = Query(default=1, ge=1, le=7, description="Ngay ISO: 1 = thu Hai .. 7 = chu nhat"),
+    session: Session = Depends(get_session),
+) -> Dict[str, Any]:
+    """Tra ve ke hoach dieu phoi phu tai 24h suy ra tu bieu gia EVN dang hieu luc."""
+    return _plan(session, weekday=weekday)
+
+
+@router.post("/peak-shaving/simulate", dependencies=[Depends(AiRoles)])
+def simulate_peak_shaving(
+    payload: PeakShavingSimulateRequest,
+    session: Session = Depends(get_session),
+) -> Dict[str, Any]:
+    """Gia lap hieu qua cat dinh voi cong suat va nhiet do van hanh tuy bien."""
+    return _plan(
+        session,
         rated_power_kw=payload.rated_power_kw,
         base_temp_c=payload.base_temp_c,
         pre_cool_target_c=payload.pre_cool_target_c,
-        haccp_limit_c=payload.haccp_limit_c,
+        weekday=payload.weekday,
     )
 
 
-@router.get("/predictive-maintenance/diagnostics", dependencies=[Depends(AnyRole)])
+@router.get("/predictive-maintenance/diagnostics", dependencies=[Depends(AiRoles)])
 def get_pdm_diagnostics(
     equipment_id: Optional[int] = Query(default=None, description="ID thiet bi can chan doan rieng"),
     session: Session = Depends(get_session),

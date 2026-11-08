@@ -105,14 +105,6 @@ class Severity(str, Enum):
     INFO = "INFO"
 
 
-SEVERITY_RANK = {
-    Severity.INFO: 0,
-    Severity.WARNING: 1,
-    Severity.MAJOR: 2,
-    Severity.CRITICAL: 3,
-}
-
-
 class Metric(str, Enum):
     """Ten cot trong TelemetrySample ma mot AlarmRule co the bam theo."""
 
@@ -165,7 +157,10 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
-    role: Mapped[str] = mapped_column(String(16), nullable=False, default=Role.BGD.value)
+    #: 32 chu, khong phai 16: hai ten vai dai 23 chu (`L5_MAINTENANCE_ENGINEER`,
+    #: `L7_WAREHOUSE_DISPATCHER`). SQLite bo qua do dai VARCHAR nen dev/test van xanh,
+    #: con Postgres chan INSERT 6/13 vai - loi chi lo ra sau khi da rollout.
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default=Role.BGD.value)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -638,11 +633,18 @@ class BilledInvoice(Base):
     )
 
 
+#: Gia tri `previous_hash` cua ban ghi dau tien trong chuoi. Dat o day (khong phai trong
+#: services/audit.py) vi cot previous_hash dung no lam default: hai noi khai bao hai chuoi
+#: khac nhau thi moi ban ghi tao bang default cua model deu khien verify_audit_chain()
+#: bao "tampered" gia.
+AUDIT_GENESIS_HASH = "GENESIS_THERMAL_BIZ_COMMAND_CENTER_2026"
+
+
 class AuditLog(Base):
     """Nhat ky kiem toan bat bien (Immutable Tamper-Evident Audit Trail).
 
     Moi thao tac he thong (dang nhap, xac nhan canh bao, thay doi setpoint, xuat hoa don)
-    deu duoc bam signature SHA-256 xau chuoi voi ban ghi truoc do.
+    deu duoc bam chu ky HMAC-SHA256 xau chuoi voi ban ghi truoc do.
     """
 
     __tablename__ = "audit_logs"
@@ -657,8 +659,16 @@ class AuditLog(Base):
     resource_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
     details: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    previous_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="GENESIS")
+    previous_hash: Mapped[str] = mapped_column(String(64), nullable=False, default=AUDIT_GENESIS_HASH)
     signature_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+
+    __table_args__ = (
+        # Moi ban ghi chi duoc co DUY NHAT mot ban ke nhiem. Khong co rang buoc nay thi
+        # hai tien trinh ghi dong thoi cung tao ra hai nhanh chuoi (fork), va fork nhin
+        # giong het bi tan cong: verify_audit_chain bao "tampered" vinh vien ma khong ai
+        # biet la loi dong bo hay la co nguoi sua nhat ky.
+        UniqueConstraint("previous_hash", name="uq_audit_logs_previous_hash"),
+    )
 
 
 class Site(Base):
